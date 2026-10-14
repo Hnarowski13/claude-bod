@@ -1,0 +1,341 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+import type { Nudge } from '../types'
+import { banner } from './banner'
+
+const BAND = {
+  plugin: 'bod',
+  component: 'AbovePrompt',
+  props: {
+    hasSurvey: false,
+    isWorking: false,
+    maxRows: 6,
+    bodyColumns: 100,
+    scroll: { offset: 0, bodyRows: 6 },
+    view: {},
+  },
+} as const
+const PANEL = {
+  plugin: 'bod',
+  component: 'Pane',
+  requestId: 'bod',
+  props: {
+    title: 'Claude Bod',
+    isFocused: true,
+    bodyColumns: 100,
+    placement: 'inline',
+    scroll: { offset: 0, bodyRows: 16 },
+    view: {},
+  },
+  viewport: { columns: 160, rows: 50 },
+} as const
+const PROMPT = { text: 'fix the bug', wait: false, origin: { kind: 'composer' } } as const
+const START = 1_000_000
+const SESSION = { cwd: '/repo', surface: 'terminal', isInteractive: true } as const
+
+// Stands in for bod.py: holds the nudge on show and answers each command as
+// the script would, with the mocked clock as its time.
+const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'started'> | null) => {
+  const world = {
+    nudge: first === null ? null : ({ ...first, started: null } as Nudge),
+    commands: [] as string[],
+    toasts: [] as string[],
+    sounds: 0,
+    hasBeeped: false,
+    // Wide enough for the engine to place a panel the mod opens on its own.
+    isWide: false,
+    isPanelOpen: false,
+    isBroken: false,
+    // claude-limit.py: what it prints, '' when this session is within the cap.
+    limit: '',
+    refilled: [] as string[],
+  }
+
+  on('session.start', () => ({ cwd: '/repo' }))
+  // What the engine draws when the mod has nothing to show: an empty band.
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+
+    return <Box />
+  })
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.id', () => ({ value: 'session-1' }))
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('prompt.fill', (_$, e) => {
+    world.refilled.push(e.text)
+
+    return { isFilled: true }
+  })
+  on('ui.open', () => {
+    world.isPanelOpen = true
+
+    return { value: world.isWide ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }
+  })
+  on('ui.close', () => {
+    world.isPanelOpen = false
+
+    return { value: undefined }
+  })
+  on('ui.panes', () => ({
+    value: world.isPanelOpen
+      ? [{ id: 'bod', title: 'Claude Bod', isShown: true, isFocused: true, isPlaced: world.isWide }]
+      : [],
+  }))
+  on('ui.toast', (_$, e) => {
+    world.toasts.push(e.text)
+
+    return { value: undefined }
+  })
+  on('process.run', (_$, e) => {
+    const [program, script, command] = e.argv
+    const ok = (stdout: string) => ({
+      value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    })
+
+    if (program === 'git') {
+      return ok('/repo\n')
+    }
+
+    if (program === 'afplay') {
+      world.sounds += 1
+
+      return ok('')
+    }
+
+    if (script?.endsWith('claude-limit.py')) {
+      return world.isBroken ? { value: { exitCode: 1, stdout: '', stderr: 'boom', isStdoutTruncated: false, isStderrTruncated: false } } : ok(world.limit)
+    }
+
+    if (world.isBroken) {
+      return { value: { exitCode: 1, stdout: '', stderr: 'boom', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+
+    world.commands.push(command ?? '')
+    const said: { took?: number; beep?: boolean } = {}
+    const { nudge } = world
+
+    if (command === 'go' && nudge) {
+      world.nudge = { ...nudge, started: clock.now() }
+    } else if (command === 'snooze') {
+      world.nudge = null
+    } else if (command === 'done' && nudge) {
+      if (nudge.started !== null) {
+        said.took = Math.floor((clock.now() - nudge.started) / 1000)
+      }
+
+      world.nudge = null
+    } else if (command === 'beep' && !world.hasBeeped) {
+      world.hasBeeped = true
+      said.beep = true
+    }
+
+    return ok(JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, ...said }))
+  })
+
+  return world
+}
+
+test('an exercise: go starts a timer that counts up, done ends it', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /Movement break: 10 squats/ })).toBeDefined()
+  expect(await ui.find({ key: 'done' })).toBeUndefined()
+
+  await ui.press({ key: 'go' })
+  await clock.advance(23_000)
+
+  expect((await ui.find({ type: 'Text', text: '⏱' }))?.text).toContain('0:23')
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+
+  await ui.press({ key: 'done' })
+
+  expect(world.toasts).toEqual(['Nice, 0:23 💪'])
+  expect(await ui.find({ text: /squats/ })).toBeUndefined()
+})
+
+test('a timed hold counts down and rings once at zero', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: 'a 20 second plank', seconds: 20 })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  await ui.press({ key: 'go' })
+  await clock.advance(5_000)
+
+  expect((await ui.find({ type: 'Text', text: '⏱' }))?.text).toContain('0:15 left')
+  expect(world.sounds).toBe(0)
+
+  await clock.advance(20_000)
+
+  expect((await ui.find({ type: 'Text', text: '⏱' }))?.text).toContain("time's up")
+  expect(world.sounds).toBe(1)
+  expect(world.commands.filter(command => command === 'beep')).toHaveLength(1)
+})
+
+test('a kindness nudge has done and no timer', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'kind', text: 'take three slow breaths', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /Be nice to yourself: take three slow breaths/ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+
+  await ui.press({ key: 'done' })
+
+  expect(world.toasts).toEqual(['Nice 💛'])
+})
+
+test('not now takes the nudge off the band', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  await ui.press({ key: 'snooze' })
+
+  expect(world.commands).toContain('snooze')
+  expect(await ui.find({ text: /squats/ })).toBeUndefined()
+})
+
+test('a nudge another session raised shows up on the next poll', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+
+  world.nudge = { kind: 'stand', text: 'Go use your standing desk.', seconds: null, started: null }
+  await clock.advance(5_000)
+
+  expect(await ui.find({ text: /standing desk/ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeDefined()
+})
+
+test('on a wide terminal an exercise takes over a panel in giant letters', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  world.isWide = true
+  await $.session.start(SESSION)
+
+  expect(world.isPanelOpen).toBe(true)
+
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const panel = await $.ui.mount({ ...PANEL, surface: 'terminal' })
+
+  // The panel has the nudge, so the band leaves it alone.
+  expect(await band.find({ key: 'go' })).toBeUndefined()
+  expect(await panel.findAll({ type: 'Text', text: '█' })).toHaveLength(banner('10 SQUATS', 94).length)
+
+  await panel.press({ key: 'go' })
+  await clock.advance(7_000)
+
+  expect(await panel.find({ type: 'Text', text: '⏱ 0:07' })).toBeDefined()
+
+  await panel.press({ key: 'done' })
+
+  expect(world.isPanelOpen).toBe(false)
+  expect(world.toasts).toEqual(['Nice, 0:07 💪'])
+})
+
+test('with no panel on screen the band draws the giant card when it has the rows', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'stand', text: 'Go use your standing desk.', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 20 }, surface: 'terminal' })
+
+  expect(await ui.findAll({ type: 'Text', text: '█' })).toHaveLength(banner('STAND UP', 94).length)
+  expect(await ui.find({ key: 'snooze' })).toBeDefined()
+})
+
+test('no prompt is sent while an exercise is on show, and her words are kept', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect((await $.prompt.submit(PROMPT)).drop).toContain('Movement break: 10 squats first!')
+  expect(world.refilled).toEqual(['fix the bug'])
+
+  await ui.press({ key: 'go' })
+
+  expect((await $.prompt.submit(PROMPT)).drop).toBeDefined()
+
+  await ui.press({ key: 'done' })
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+})
+
+test('not now lets prompts through again', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  await ui.press({ key: 'snooze' })
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+})
+
+test('a kindness nudge never holds a prompt back', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'kind', text: 'take three slow breaths', seconds: null })
+  await $.session.start(SESSION)
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+  expect(world.isPanelOpen).toBe(false)
+})
+
+test('a broken bod.py never locks her out', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  world.isWide = true
+  await $.session.start(SESSION)
+  world.isBroken = true
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+  expect(world.isPanelOpen).toBe(false)
+})
+
+test('a session past the Claude cap has its prompt refused, and her words are kept', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+  world.limit = JSON.stringify({ decision: 'block', reason: 'You have 6 Claudes open — the limit is 4.' })
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ drop: '🧠 You have 6 Claudes open — the limit is 4.' })
+  expect(world.refilled).toEqual(['fix the bug'])
+
+  world.limit = ''
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+})
+
+test('a broken claude-limit.py lets prompts through', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+  world.isBroken = true
+
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+})
+
+test('every prompt is recorded as work', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+  await $.prompt.submit(PROMPT)
+
+  expect(world.commands).toContain('hook')
+})
+
+test('giant letters wrap by word to the room there is', () => {
+  expect(banner('10 squats', 100)).toHaveLength(5)
+  expect(banner('5 lunges each leg', 60)).toHaveLength(11)
+  expect(banner('5 lunges each leg', 60).every(row => row.length <= 60)).toBe(true)
+  expect(banner('0:07', 100)[1]).toBe('█  ██ █ █  ██     █')
+})

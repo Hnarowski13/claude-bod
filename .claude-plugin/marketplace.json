@@ -1,0 +1,11 @@
+{
+  "name": "bod",
+  "owner": { "name": "Helena Narowski" },
+  "plugins": [
+    {
+      "name": "bod",
+      "source": "./",
+      "description": "Wellness for Claude Code: movement nudges, a work check, and a cap on open Claudes."
+    }
+  ]
+}
