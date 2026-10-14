@@ -32,6 +32,9 @@ const PANEL = {
 } as const
 const PROMPT = { text: 'fix the bug', wait: false, origin: { kind: 'composer' } } as const
 const START = 1_000_000
+// `/bod <args>` as she'd type it.
+const BOD = (args: string) =>
+  ({ command: 'bod', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } }) as const
 const SESSION = { cwd: '/repo', surface: 'terminal', isInteractive: true } as const
 
 // Stands in for bod.py: holds the nudge on show and answers each command as
@@ -105,6 +108,12 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     if (script?.endsWith('claude-limit.py')) {
       return world.isBroken ? { value: { exitCode: 1, stdout: '', stderr: 'boom', isStdoutTruncated: false, isStderrTruncated: false } } : ok(world.limit)
+    }
+
+    if (command === 'level' || command === 'every') {
+      world.commands.push(`${command} ${e.argv[3]}`)
+
+      return ok(`Claude Bod is on ${e.argv[3]}.\n`)
     }
 
     if (world.isBroken) {
@@ -331,6 +340,21 @@ test('every prompt is recorded as work', async ($, on) => {
   await $.prompt.submit(PROMPT)
 
   expect(world.commands).toContain('hook')
+})
+
+test('/bod level and /bod every set Claude Bod, and /bod alone opens the panel', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('level hard'))).toMatchObject({ text: 'Claude Bod is on hard.' })
+  expect(await $.command.run(BOD(' every 10 '))).toMatchObject({ text: 'Claude Bod is on 10.' })
+  expect(world.commands).toContain('level hard')
+  expect(world.commands).toContain('every 10')
+  expect(world.isPanelOpen).toBe(false)
+
+  await $.command.run(BOD(''))
+  expect(world.isPanelOpen).toBe(true)
 })
 
 test('giant letters wrap by word to the room there is', () => {

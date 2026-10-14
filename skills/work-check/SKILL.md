@@ -41,6 +41,6 @@ later replies in the same session unless she asks again.
 
 The cap, the stretch limit and the three nudge intervals are constants at the
 top of `scripts/bod.py` in the Claude Bod plugin (bod). The same script is what
-sends a movement nudge every 10 minutes, a standing desk nudge every 30
+sends a movement nudge every 5 minutes (her `/bod every` choice), a standing desk nudge every 30
 and a compassion nudge (a hug, a few slow breaths) every 45, and it switches the standing desk one to "stop for the day" once the cap
 is passed.

@@ -91,6 +91,22 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
   }
 }
 
+// `/bod level hard`, `/bod every 10`, `/bod settings`: bod.py keeps the choice
+// and says what Claude Bod is set to now, or what to pick from.
+async function settings($: EngineInterface, args: string[]): Promise<string> {
+  if (script === null) {
+    return 'Claude Bod needs python3 to run.'
+  }
+
+  try {
+    const { stdout } = await $.process.run(['python3', script, ...args], { timeoutMs: 10000 })
+
+    return stdout.trim()
+  } catch {
+    return 'Claude Bod could not save that.'
+  }
+}
+
 // Why this session may not send prompts right now, or null when it may. Too
 // many Claudes open is the only reason; a broken script lets everything through.
 async function overLimit($: EngineInterface): Promise<string | null> {
@@ -268,7 +284,11 @@ export const register: Register = on => {
 
     // Asked for by name, the panel is placed on a terminal of any width; opened
     // by the mod alone it only shows on a wide one.
-    await $.command.register({ name: 'bod', description: 'Open the Claude Bod panel' })
+    await $.command.register({
+      name: 'bod',
+      description: 'Open the Claude Bod panel, or set the level and how often to exercise',
+      argumentHint: '[level easy|medium|hard] [every 5|10|15]',
+    })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
     $.clock.every(1000, () => void second($).catch(() => undefined))
@@ -276,7 +296,17 @@ export const register: Register = on => {
     return started
   })
 
-  on('command.run', { command: 'bod' }, async $ => {
+  on('command.run', { command: 'bod' }, async ($, e) => {
+    const [setting, value] = (e.args ?? '').trim().split(/\s+/)
+
+    if (setting === 'level' || setting === 'every') {
+      return { text: await settings($, [setting, value ?? '']) }
+    }
+
+    if (setting === 'settings') {
+      return { text: await settings($, ['settings']) }
+    }
+
     await $.ui.open({ id: PANE, title: 'Claude Bod', focus: true, rows: PANE_ROWS })
 
     return { text: 'Claude Bod panel opened.' }

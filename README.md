@@ -2,7 +2,7 @@
 
 Looks after the person at the keyboard while Claude Code runs. Works in every project.
 
-- **Movement nudges** in a band above the prompt: a quick exercise every 10 minutes of work, the standing desk every 30, something kind to yourself every 45. They have go / done / not now buttons and an exercise timer.
+- **Movement nudges** in a band above the prompt: a quick exercise every 5 minutes of work (or 10, or 15), the standing desk every 30, something kind to yourself every 45. They have go / done / not now buttons and an exercise timer.
 - **Takeover**: an exercise or standing-desk nudge takes the session over (a panel in giant letters, `/bod` opens it on a narrow terminal). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
 - **Stop for the day**: past 4 hours of Claude time today, the standing nudge becomes "stop for the day".
 - **Claude cap**: at most 4 Claudes open at once. A newer session refuses prompts until an older one closes.
@@ -34,6 +34,12 @@ To run it from a local clone, so edits show up after `/reload-plugins`:
 claude plugin marketplace add ~/Projects/claude-bod
 claude plugin install bod@bod
 ```
+
+## Level and timing
+
+- `/bod level easy|medium|hard`: one exercise per nudge, two, or three with more reps and longer holds. Easy by default.
+- `/bod every 5|10|15`: minutes of work between exercise nudges. 5 by default.
+- `/bod settings` says what it's set to. Your choices are kept in `~/.claude/bod-settings.json`.
 
 ## Tuning
 

@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+# Never her real choices: each test starts from the defaults (easy, every 5).
+SETTINGS_DIR = tempfile.mkdtemp()
+os.environ["BOD_SETTINGS"] = os.path.join(SETTINGS_DIR, "settings.json")
 import bod  # noqa: E402
 
 NOW = datetime(2026, 10, 13, 10, 0).astimezone()
@@ -153,6 +156,52 @@ class Prompted(unittest.TestCase):
         self.assertEqual(state["moves"], 2)
 
 
+class Levels(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(bod.SETTINGS_PATH):
+            os.remove(bod.SETTINGS_PATH)
+
+    def test_the_exercise_nudge_comes_every_five_minutes_by_default(self):
+        state = working(move=4)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertIsNone(state["pending"])
+        state = working(move=5)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertEqual(state["pending"]["kind"], "move")
+
+    def test_every_ten_waits_ten_minutes(self):
+        settings = {"level": "easy", "every": 10}
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, settings)
+        self.assertIsNone(state["pending"])
+
+    def test_easy_is_one_exercise(self):
+        self.assertEqual(bod.exercise(0, "easy"), ("5 push ups", None, 1))
+
+    def test_medium_is_two_exercises(self):
+        self.assertEqual(bod.exercise(0, "medium"), ("5 push ups, then 10 jumping jacks", None, 2))
+
+    def test_hard_is_three_exercises_with_more_reps(self):
+        text, _, count = bod.exercise(2, "hard")
+        self.assertEqual(text, "15 squats, then a 30 second plank, then 15 calf raises")
+        self.assertEqual(count, 3)
+
+    def test_a_lone_plank_counts_down_and_a_set_counts_up(self):
+        self.assertEqual(bod.exercise(3, "easy")[1], 20)
+        self.assertEqual(bod.exercise(3, "hard")[1], None)
+
+    def test_done_moves_the_rotation_past_the_whole_set(self):
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5})
+        bod.press(state, "done", NOW)
+        self.assertEqual(state["moves"], 3)
+
+    def test_a_bad_settings_file_falls_back_to_the_defaults(self):
+        with open(bod.SETTINGS_PATH, "w") as fh:
+            fh.write('{"level": "extreme", "every": 7}')
+        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5})
+
+
 class CommandLine(unittest.TestCase):
     """The state file round trip, as the mod and the hook really run it."""
 
@@ -191,6 +240,19 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(self.run_bod("show", path, "plank")["nudge"]["seconds"], 20)
             self.assertEqual(self.run_bod("show", path, "kind")["nudge"]["kind"], "kind")
             self.assertEqual(self.run_bod("tick", path)["nudge"]["kind"], "kind")
+
+    def test_level_and_every_are_kept_and_checked(self):
+        run = lambda *args: subprocess.run(  # noqa: E731
+            [sys.executable, os.path.join(HERE, "bod.py"), *args], capture_output=True, text=True
+        )
+        self.assertEqual(run("level", "hard").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 5 minutes.")
+        self.assertEqual(run("every", "15").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes.")
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15})
+        self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes.")
+        bad = run("every", "7")
+        self.assertEqual(bad.returncode, 1)
+        self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15.")
+        os.remove(bod.SETTINGS_PATH)
 
     def test_a_state_file_from_before_the_mod_still_loads(self):
         with tempfile.TemporaryDirectory() as folder:

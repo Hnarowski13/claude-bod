@@ -2,8 +2,8 @@
 """Claude nudges Helena to move: get off the chair, do a quick exercise, stop
 for the day.
 
-Three nudges on three separate timers: a short exercise every MOVE_MINUTES
-of work, "go stand / walk" every STAND_MINUTES, and something kind to herself
+Three nudges on three separate timers: a short exercise every 5, 10 or 15
+minutes of work (her pick, 5 by default), "go stand / walk" every STAND_MINUTES, and something kind to herself
 every KIND_MINUTES. Once today's hours pass DAILY_CAP_HOURS the standing one
 becomes "stop for the day" instead.
 
@@ -23,6 +23,12 @@ Entry points:
   bod.py show move | plank | stand | kind
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
+  bod.py level easy | medium | hard
+                  How much exercise each nudge asks for: one exercise, two,
+                  or three with more reps. Easy by default.
+  bod.py every 5 | 10 | 15
+                  How many minutes of work between exercise nudges.
+  bod.py settings What Claude Bod is set to, in a sentence.
   bod.py status   What the work-check skill runs: hours today, the current
                   stretch without a break, and a verdict.
 
@@ -46,7 +52,6 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hours import GAP_MINUTES, timestamps  # noqa: E402
 
-MOVE_MINUTES = 10
 STAND_MINUTES = 30
 KIND_MINUTES = 45
 BREAK_MINUTES = 20
@@ -59,16 +64,24 @@ QUIET_SECONDS = 60
 MOD_ALIVE_SECONDS = 60
 
 STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-state.json")
+# Her choices, kept apart from the state so a reset never loses them.
+SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/bod-settings.json")
+
+# level: (exercises per nudge, how much the reps and seconds grow)
+LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
+EVERY_CHOICES = (5, 10, 15)
+DEFAULT_SETTINGS = {"level": "easy", "every": 5}
 
 POSTURE = "Hey, are you sitting not good? Go use your standing desk and walking treadmill."
-# (what to do, seconds to count down from; None counts up instead)
+# (what to do, with {} for how many, how many on easy, whether it's seconds
+# to count down from rather than reps)
 EXERCISES = [
-    ("5 push ups", None),
-    ("10 jumping jacks", None),
-    ("10 squats", None),
-    ("a 20 second plank", 20),
-    ("10 calf raises", None),
-    ("5 lunges each leg", None),
+    ("{} push ups", 5, False),
+    ("{} jumping jacks", 10, False),
+    ("{} squats", 10, False),
+    ("a {} second plank", 20, True),
+    ("{} calf raises", 10, False),
+    ("{} lunges each leg", 5, False),
 ]
 COMPASSION = [
     "give yourself a hug",
@@ -186,12 +199,38 @@ def stand_nudge(worked):
     return stop_nudge(worked) if over_cap(worked) else POSTURE
 
 
-def exercise(moves):
-    return EXERCISES[moves % len(EXERCISES)]
+def load_settings():
+    try:
+        with open(SETTINGS_PATH) as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        raw = {}
+    level = raw.get("level") if raw.get("level") in LEVELS else DEFAULT_SETTINGS["level"]
+    every = raw.get("every") if raw.get("every") in EVERY_CHOICES else DEFAULT_SETTINGS["every"]
+    return {"level": level, "every": every}
 
 
-def move_nudge(moves):
-    return f"Movement break: {exercise(moves)[0]}. Go, I'll wait."
+def save_settings(settings):
+    tmp = SETTINGS_PATH + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(settings, fh)
+    os.replace(tmp, SETTINGS_PATH)
+
+
+def exercise(moves, level="easy"):
+    """(text, seconds to count down from or None, how many exercises): the
+    next ones in the rotation, as many as the level asks for. Only a lone
+    timed exercise counts down; a set of them counts up."""
+    count, scale = LEVELS[level]
+    picked = [EXERCISES[(moves + i) % len(EXERCISES)] for i in range(count)]
+    amounts = [int(amount * scale + 0.5) for _, amount, _ in picked]
+    text = ", then ".join(what.format(n) for (what, _, _), n in zip(picked, amounts))
+    seconds = amounts[0] if count == 1 and picked[0][2] else None
+    return text, seconds, count
+
+
+def move_nudge(moves, level="easy"):
+    return f"Movement break: {exercise(moves, level)[0]}. Go, I'll wait."
 
 
 def compassion(kinds):
@@ -225,11 +264,13 @@ def prompted(state, now):
     # No mod: nothing draws a nudge left on show, and it would hold up the rest.
     state["pending"] = None
 
+    settings = load_settings()
     nudges = []
-    if due(state, "last_move", MOVE_MINUTES, now):
-        nudges.append(move_nudge(state["moves"]))
+    if due(state, "last_move", settings["every"], now):
+        text, _, count = exercise(state["moves"], settings["level"])
+        nudges.append(f"Movement break: {text}. Go, I'll wait.")
         state["last_move"] = now
-        state["moves"] += 1
+        state["moves"] += count
     if due(state, "last_stand", STAND_MINUTES, now):
         worked, _ = today(now)
         nudges.append(stand_nudge(worked))
@@ -266,8 +307,9 @@ def hook():
     )
 
 
-def advance(state, now, worked_today=lambda now: today(now)[0]):
+def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
     """Put the next nudge on show once one is due and nothing else is showing."""
+    settings = settings or load_settings()
     if state["stop"] and state["stop"]["date"] != now.date().isoformat():
         state["stop"] = None
     pending = state["pending"]
@@ -285,9 +327,9 @@ def advance(state, now, worked_today=lambda now: today(now)[0]):
             # Not a nudge to finish: it stays up for the day, beside the others.
             state["stop"] = {"text": stop_nudge(worked), "date": now.date().isoformat()}
             state["last_stand"] = now
-    if due(state, "last_move", MOVE_MINUTES, now):
-        text, seconds = exercise(state["moves"])
-        pending = {"kind": "move", "text": text, "seconds": seconds}
+    if due(state, "last_move", settings["every"], now):
+        text, seconds, count = exercise(state["moves"], settings["level"])
+        pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
     elif due(state, "last_stand", STAND_MINUTES, now):
         pending = {"kind": "stand", "text": POSTURE, "seconds": None}
     elif due(state, "last_kind", KIND_MINUTES, now):
@@ -312,7 +354,8 @@ def press(state, button, now):
     elif button == "done":
         state[LAST[pending["kind"]]] = now
         if pending["kind"] == "move":
-            state["moves"] += 1
+            # The rotation moves past every exercise in the set.
+            state["moves"] += pending.get("count", 1)
         elif pending["kind"] == "kind":
             state["kinds"] += 1
         state["pending"] = None
@@ -370,17 +413,40 @@ def show(kind):
         state = fresh_state(now, load_state())
         if kind == "plank":
             kind = "move"
-            state["moves"] = next(i for i, (_, seconds) in enumerate(EXERCISES) if seconds)
-        state[LAST[kind]] = now - timedelta(minutes=max(MOVE_MINUTES, STAND_MINUTES, KIND_MINUTES))
+            state["moves"] = next(i for i, (_, _, timed) in enumerate(EXERCISES) if timed)
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, STAND_MINUTES, KIND_MINUTES))
         advance(state, now, lambda now: timedelta(0))
         save_state(state)
     print(json.dumps(view(state, now)))
+
+
+def describe(settings):
+    count, _ = LEVELS[settings["level"]]
+    what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+    return f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes."
+
+
+def choose(key, value):
+    """Set the level or the minutes; prints what Claude Bod is set to now."""
+    settings = load_settings()
+    if key == "every":
+        value = int(value) if value.isdigit() else None
+        choices = EVERY_CHOICES
+    else:
+        choices = tuple(LEVELS)
+    if value not in choices:
+        print(f"Pick one of: {', '.join(str(c) for c in choices)}.")
+        sys.exit(1)
+    settings[key] = value
+    save_settings(settings)
+    print(describe(settings))
 
 
 def status():
     now = datetime.now().astimezone()
     worked, stretch_start = today(now)
     print(f"Worked today: {fmt(worked)} (cap {DAILY_CAP_HOURS}h)")
+    print(describe(load_settings()))
     if stretch_start:
         print(f"Current stretch: {fmt(now - stretch_start)} without a {BREAK_MINUTES} minute break")
     else:
@@ -410,6 +476,10 @@ if __name__ == "__main__":
             pass
     elif mode in ("tick", "go", "done", "snooze", "beep"):
         mod(mode)
+    elif mode in ("level", "every"):
+        choose(mode, sys.argv[2] if sys.argv[2:] else "")
+    elif mode == "settings":
+        print(describe(load_settings()))
     elif mode == "show" and sys.argv[2:] and sys.argv[2] in (*LAST, "plank"):
         show(sys.argv[2])
     else:
