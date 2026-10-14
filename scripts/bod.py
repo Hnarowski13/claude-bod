@@ -27,7 +27,9 @@ Entry points:
                   How much exercise each nudge asks for: one exercise, two,
                   or three with more reps. Easy by default.
   bod.py every 5 | 10 | 15
-                  How many minutes of work between exercise nudges.
+                  How many minutes of work between exercise nudges. Both can
+                  go in one call: bod.py level hard every 10, or
+                  just bod.py level hard 10.
   bod.py settings What Claude Bod is set to, in a sentence.
   bod.py status   What the work-check skill runs: hours today, the current
                   stretch without a break, and a verdict.
@@ -426,18 +428,29 @@ def describe(settings):
     return f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes."
 
 
-def choose(key, value):
-    """Set the level or the minutes; prints what Claude Bod is set to now."""
+def choose(args):
+    """Set the level and/or the minutes, given as pairs ("level hard every 10",
+    or just "level hard 10"); prints what Claude Bod is set to now. Nothing is
+    saved unless every pair is valid."""
     settings = load_settings()
-    if key == "every":
-        value = int(value) if value.isdigit() else None
-        choices = EVERY_CHOICES
-    else:
-        choices = tuple(LEVELS)
-    if value not in choices:
-        print(f"Pick one of: {', '.join(str(c) for c in choices)}.")
-        sys.exit(1)
-    settings[key] = value
+    # A bare number is the minutes: "level hard 10" means "level hard every 10".
+    args = [part for i, arg in enumerate(args)
+            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] != "every") else [arg])]
+    if not args or len(args) % 2:
+        args = [*args, ""]
+    for key, value in zip(args[::2], args[1::2]):
+        if key == "every":
+            value = int(value) if value.isdigit() else None
+            choices = EVERY_CHOICES
+        elif key == "level":
+            choices = tuple(LEVELS)
+        else:
+            print("Use: level easy|medium|hard, every 5|10|15.")
+            sys.exit(1)
+        if value not in choices:
+            print(f"Pick one of: {', '.join(str(c) for c in choices)}.")
+            sys.exit(1)
+        settings[key] = value
     save_settings(settings)
     print(describe(settings))
 
@@ -477,7 +490,7 @@ if __name__ == "__main__":
     elif mode in ("tick", "go", "done", "snooze", "beep"):
         mod(mode)
     elif mode in ("level", "every"):
-        choose(mode, sys.argv[2] if sys.argv[2:] else "")
+        choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))
     elif mode == "show" and sys.argv[2:] and sys.argv[2] in (*LAST, "plank"):

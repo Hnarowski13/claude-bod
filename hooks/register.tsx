@@ -91,7 +91,7 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
   }
 }
 
-// `/bod level hard`, `/bod every 10`, `/bod settings`: bod.py keeps the choice
+// `/bod level hard`, `/bod every 10`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`: bod.py keeps the choice
 // and says what Claude Bod is set to now, or what to pick from.
 async function settings($: EngineInterface, args: string[]): Promise<string> {
   if (script === null) {
@@ -287,7 +287,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Open the Claude Bod panel, or set the level and how often to exercise',
-      argumentHint: '[level easy|medium|hard] [every 5|10|15]',
+      argumentHint: '[level easy|medium|hard] [[every] 5|10|15]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -297,10 +297,11 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'bod' }, async ($, e) => {
-    const [setting, value] = (e.args ?? '').trim().split(/\s+/)
+    const args = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
+    const [setting] = args
 
     if (setting === 'level' || setting === 'every') {
-      return { text: await settings($, [setting, value ?? '']) }
+      return { text: await settings($, args) }
     }
 
     if (setting === 'settings') {

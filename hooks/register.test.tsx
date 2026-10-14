@@ -111,9 +111,9 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     if (command === 'level' || command === 'every') {
-      world.commands.push(`${command} ${e.argv[3]}`)
+      world.commands.push(e.argv.slice(2).join(' '))
 
-      return ok(`Claude Bod is on ${e.argv[3]}.\n`)
+      return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
     }
 
     if (world.isBroken) {
@@ -351,6 +351,8 @@ test('/bod level and /bod every set Claude Bod, and /bod alone opens the panel',
   expect(await $.command.run(BOD(' every 10 '))).toMatchObject({ text: 'Claude Bod is on 10.' })
   expect(world.commands).toContain('level hard')
   expect(world.commands).toContain('every 10')
+  await $.command.run(BOD('level hard every 15'))
+  expect(world.commands).toContain('level hard every 15')
   expect(world.isPanelOpen).toBe(false)
 
   await $.command.run(BOD(''))
