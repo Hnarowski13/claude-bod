@@ -38,8 +38,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // claude-limit.py: what it prints, '' when this session is within the cap.
     limit: '',
     refilled: [] as string[],
-    // The text at the end of the hint line under the prompt.
-    tail: undefined as string | undefined,
+    // The lines the mod added to the chat.
+    logs: [] as string[],
     // When the move / stand nudges are due, as bod.py would send it.
     next: null as { move?: number; stand?: number } | null,
     paused: false,
@@ -50,14 +50,9 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
   }
 
   on('session.start', () => ({ cwd: '/repo' }))
-  // What the engine draws when the mod has nothing to show: an empty band. For
-  // the hint line under the prompt, it keeps the tail the mod handed down.
+  // What the engine draws when the mod has nothing to show: an empty band.
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
-
-    if (e.component === 'PromptHint') {
-      world.tail = e.props.tail
-    }
 
     return <Box />
   })
@@ -86,6 +81,11 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
   }))
   on('ui.status', (_$, e) => {
     world.status = e.text
+
+    return { value: undefined }
+  })
+  on('ui.log', (_$, e) => {
+    world.logs.push(e.text)
 
     return { value: undefined }
   })
@@ -432,30 +432,27 @@ test('/bod now puts an exercise up at once, in the band', async ($, on) => {
   expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
-test('done shows "✅ Nice job!" under the prompt for half a minute, beside the toast', async ($, on) => {
+test('done adds "✅ Nice job!" to the chat, beside the toast', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
   await $.session.start(SESSION)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const hint = await $.ui.mount({
-    plugin: 'bod',
-    component: 'PromptHint',
-    props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
-    surface: 'terminal',
-  })
-
-  expect(world.tail).toBeUndefined()
 
   await band.press({ key: 'go' })
   await clock.advance(42_000)
   await band.press({ key: 'done' })
-  await hint.find({})
 
   expect(world.toasts).toEqual(['Nice, 0:42 💪'])
-  expect(world.tail).toBe('✅ Nice job! 0:42')
+  expect(world.logs).toEqual(['✅ Nice job! 0:42'])
+})
 
-  await clock.advance(31_000)
-  await hint.find({})
+test('a kindness nudge done says "✅ Nice job!" with no time', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'kind', text: 'take three slow breaths', seconds: null })
+  await $.session.start(SESSION)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
 
-  expect(world.tail).toBeUndefined()
+  await band.press({ key: 'done' })
+
+  expect(world.logs).toEqual(['✅ Nice job!'])
 })
