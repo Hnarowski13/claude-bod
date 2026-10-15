@@ -44,7 +44,7 @@ after `/reload-plugins`. So:
 | --- | --- |
 | Level (`LEVELS`), exercise interval choices (`EVERY_CHOICES`), other nudge timers, daily cap, break gap, snooze, exercises, kindness lines, wording | constants at the top of `scripts/bod.py` |
 | How many Claudes may be open | `LIMIT` in `scripts/claude-limit.py` |
-| The band, the takeover panel, buttons, `/bod`, prompt lock, the cap's refusal message | `hooks/register.tsx` (giant letters in `hooks/banner.ts`) |
+| The band, the takeover box, buttons, `/bod`, prompt lock, the cap's refusal message, the countdown | `hooks/register.tsx` (no side panel: Claude Code docks panes beside the transcript, so everything draws in the band above the prompt) |
 | How hours are counted | `scripts/hours.py` (every project's transcripts) |
 | `/work-check` wording and verdicts | `skills/work-check/SKILL.md` |
 | Shared state the mod draws from | `types/index.d.ts` (the `PluginState` contract) |

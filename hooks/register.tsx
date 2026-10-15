@@ -3,10 +3,10 @@
 // on show in a state file every session shares; this module polls it, draws
 // what it says, and sends the button presses back.
 //
-// An exercise or standing-desk nudge takes the session over: a panel with the
-// nudge in giant letters, and no prompt is sent until it's done (or put off
-// with "not now"). Kindness nudges and the "stop for the day" line only show
-// in the band above the prompt.
+// An exercise or standing-desk nudge takes the session over: a box in the
+// band above the prompt, full width, and no prompt is sent until it's done (or
+// put off with "not now"). Kindness nudges and the "stop for the day" line
+// show in the same band as a single line.
 //
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
@@ -14,16 +14,12 @@ import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import type { Nudge, Reply, View } from '../types'
-import { banner } from './banner'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
 const ICONS = { move: '🤸', stand: '🚶', kind: '💛' }
-const PANE = 'bod'
-const PANE_ROWS = 16
-// Frame, padding, heading, gaps and the button row around the giant letters.
-const CARD_CHROME_ROWS = 9
-const CARD_CHROME_COLUMNS = 6
+// The box's frame, its heading, the blank rows and the button row around the lines.
+const CARD_CHROME_ROWS = 6
 
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
@@ -36,9 +32,15 @@ type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
 export const clock = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
+// The exercises in a set, in order: bod.py joins them with ", then ".
+export const steps = (nudge: Nudge) => nudge.text.split(', then ')
+
+// A set on one line, an arrow between exercises.
+const inLine = (nudge: Nudge) => steps(nudge).join(' → ')
+
 export const headline = (nudge: Nudge) => {
   if (nudge.kind === 'move') {
-    return `Movement break: ${nudge.text}`
+    return `Movement break: ${inLine(nudge)}`
   }
 
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
@@ -81,9 +83,6 @@ export const countdown = (shown: View | null, at: number) => {
 
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
-
-// What the giant letters say before go is pressed.
-export const shout = (nudge: Nudge) => (nudge.kind === 'stand' ? 'STAND UP' : nudge.text.replace(/^an? /, ''))
 
 // Where bod.py is, once session.start has checked it runs; null when it doesn't.
 let script: string | null = null
@@ -155,8 +154,7 @@ async function overLimit($: EngineInterface): Promise<string | null> {
   }
 }
 
-// Draws `next`, opening or closing the takeover panel to match. Only a real
-// change redraws anything, not every poll.
+// Draws `next`. Only a real change redraws anything, not every poll.
 async function show($: EngineInterface, next: View | null, at: number) {
   const shown = await read($, view)
 
@@ -164,18 +162,8 @@ async function show($: EngineInterface, next: View | null, at: number) {
     return
   }
 
-  // The panel opens before the view changes, so the band, drawn again by that
-  // change, already sees it and leaves the nudge to it.
-  if (locks(next?.nudge) && !locks(shown?.nudge)) {
-    await $.ui.open({ id: PANE, title: 'Claude Bod', focus: true, rows: PANE_ROWS }).catch(() => undefined)
-  }
-
   await update($, now, () => at)
   await update($, view, () => next)
-
-  if (!locks(next?.nudge) && locks(shown?.nudge)) {
-    await $.ui.close({ id: PANE }).catch(() => undefined)
-  }
 }
 
 // Runs once a second: moves the countdown in the status line and the timer on
@@ -226,45 +214,29 @@ async function finish($: EngineInterface) {
   }
 }
 
-async function isPanelDrawn($: EngineInterface) {
-  const panes = await $.ui.panes().catch(() => [])
-
-  return panes.some(pane => pane.id === PANE && pane.isPlaced)
-}
-
-// The takeover card: the nudge in giant letters (the timer, once it runs)
-// over its buttons. Null when it doesn't fit in `rows`.
-function card(
-  { Box, Button, Text }: Drawing,
-  nudge: Nudge,
-  at: number,
-  press: Press,
-  room: { columns: number; rows: number }
-) {
+// The takeover card: a box with what to do, one exercise per line, over the
+// timer and buttons. Null when it doesn't fit in `rows`.
+function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
-  const letters = banner(
-    isRunning ? (timer.isOver ? 'TIME!' : timer.digits) : shout(nudge),
-    room.columns - CARD_CHROME_COLUMNS
-  )
+  const todo = nudge.kind === 'stand' ? [nudge.text] : steps(nudge)
+  const title = nudge.kind === 'stand' ? (isRunning ? 'Standing / walking' : 'Stand up') : 'Movement break'
 
-  if (letters.length + CARD_CHROME_ROWS > room.rows) {
+  if (todo.length + CARD_CHROME_ROWS > rows) {
     return null
   }
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="claude" paddingX={2} paddingY={1} gap={1}>
+    <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={1}>
       <Box gap={1} flexWrap="wrap">
-        <Text bold>
-          {ICONS[nudge.kind]} {isRunning && nudge.kind === 'stand' ? 'Standing / walking' : headline(nudge)}
+        <Text bold color="claude">
+          {ICONS[nudge.kind]} {title}
         </Text>
         <Text dimColor>· no prompts until this is done</Text>
       </Box>
-      <Box flexDirection="column">
-        {letters.map(row => (
-          <Text bold color={isRunning ? 'success' : 'claude'}>
-            {row === '' ? ' ' : row}
-          </Text>
+      <Box flexDirection="column" paddingX={2}>
+        {todo.map((step, index) => (
+          <Text bold>{todo.length > 1 ? `${index + 1}. ${step}` : step}</Text>
         ))}
       </Box>
       {isRunning ? (
@@ -289,7 +261,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     return (
       <Box key="nudge" gap={1} flexWrap="wrap">
         <Text bold>
-          {ICONS[nudge.kind]} {nudge.kind === 'stand' ? 'Standing / walking' : nudge.text}
+          {ICONS[nudge.kind]} {nudge.kind === 'stand' ? 'Standing / walking' : inLine(nudge)}
         </Text>
         <Text color="success">⏱ {reading(nudge, at).text}</Text>
         <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
@@ -325,11 +297,9 @@ export const register: Register = on => {
       return started
     }
 
-    // Asked for by name, the panel is placed on a terminal of any width; opened
-    // by the mod alone it only shows on a wide one.
     await $.command.register({
       name: 'bod',
-      description: 'Open the Claude Bod panel, exercise right now, or set the level and how often to exercise',
+      description: 'Exercise right now, or set the level and how often to exercise',
       argumentHint: '[now] [level easy|medium|hard] [[every] 5|10|15]',
     })
 
@@ -347,19 +317,14 @@ export const register: Register = on => {
       return { text: await settings($, args) }
     }
 
-    if (setting === 'settings') {
-      return { text: await settings($, ['settings']) }
-    }
-
     const reply = setting === 'now' ? await bod($, 'now') : null
-
-    await $.ui.open({ id: PANE, title: 'Claude Bod', focus: true, rows: PANE_ROWS })
 
     if (reply?.nudge) {
       return { text: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)}` }
     }
 
-    return { text: 'Claude Bod panel opened.' }
+    // `/bod` alone or `/bod settings`: what it's set to, and how to start now.
+    return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
   })
 
   // The lock: while an exercise or standing-desk nudge is on show, nothing she
@@ -405,35 +370,6 @@ export const register: Register = on => {
     }
   })
 
-  // Her close mark doesn't get her out of it; "not now" does.
-  on('ui.close', { id: PANE }, async ($, e, next) => {
-    if (e.origin.kind === 'person' && locks((await read($, view))?.nudge)) {
-      return { value: undefined }
-    }
-
-    return next(e)
-  })
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const elements = $.ui.resolve(e)
-    const { Box, Text } = elements
-    const nudge = (await read($, view))?.nudge
-
-    if (!locks(nudge)) {
-      return (
-        <Box>
-          <Text dimColor>Nothing to do right now 💛 The next nudge will show up here.</Text>
-        </Box>
-      )
-    }
-
-    const at = await read($, now)
-    const press: Press = { go: () => void bod($, 'go'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
-    const room = { columns: e.props.bodyColumns, rows: e.viewport?.rows ?? 24 }
-
-    return card(elements, nudge, at, press, room) ?? line(elements, nudge, at, press)
-  })
-
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, view)
 
@@ -444,8 +380,7 @@ export const register: Register = on => {
     const elements = $.ui.resolve(e)
     const { Box, Text } = elements
     const { nudge, stop } = shown
-    // Read up here so a running timer draws the band again every second, which
-    // is also when it notices the panel has gone and takes the nudge back.
+    // Read up here so a running timer draws the band again every second.
     const at = await read($, now)
     const rows = []
 
@@ -453,11 +388,10 @@ export const register: Register = on => {
       rows.push(<Text color="warning">🛑 {stop}</Text>)
     }
 
-    // A nudge that locks belongs to the panel; it is drawn here, as large as
-    // the band allows, only when no panel is on screen.
-    if (nudge !== null && !(locks(nudge) && (await isPanelDrawn($)))) {
+    // A nudge that locks gets the box when the band has the rows for it.
+    if (nudge !== null) {
       const press: Press = { go: () => void bod($, 'go'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
-      const room = { columns: e.props.bodyColumns, rows: e.props.maxRows - rows.length }
+      const room = e.props.maxRows - rows.length
 
       rows.push((locks(nudge) ? card(elements, nudge, at, press, room) : null) ?? line(elements, nudge, at, press))
     }

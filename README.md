@@ -4,7 +4,7 @@ Looks after the person at the keyboard while Claude Code runs. Works in every pr
 
 - **Movement nudges** in a band above the prompt: a quick exercise every 5 minutes of work (or 10, or 15), the standing desk every 30, something kind to yourself every 45. They have go / done / not now buttons and an exercise timer.
 - **Countdown**: the status line under the prompt shows how long until the next exercise and standing nudge (`🤸 move in 3:12 · 🚶 stand in 18:40`), or that Bod is paused after 20 minutes without a prompt.
-- **Takeover**: an exercise or standing-desk nudge takes the session over (a panel in giant letters, `/bod` opens it on a narrow terminal). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
+- **Takeover**: an exercise or standing-desk nudge takes the session over (a box above the prompt, one exercise per line). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
 - **Stop for the day**: past 4 hours of Claude time today, the standing nudge becomes "stop for the day".
 - **Claude cap**: at most 4 Claudes open at once. A newer session refuses prompts until an older one closes.
 - **`/work-check`**: hours today, the current stretch, and a verdict (keep going, take a break, or stop).

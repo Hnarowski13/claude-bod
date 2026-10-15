@@ -2,7 +2,6 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Nudge } from '../types'
-import { banner } from './banner'
 
 const BAND = {
   plugin: 'bod',
@@ -15,20 +14,6 @@ const BAND = {
     scroll: { offset: 0, bodyRows: 6 },
     view: {},
   },
-} as const
-const PANEL = {
-  plugin: 'bod',
-  component: 'Pane',
-  requestId: 'bod',
-  props: {
-    title: 'Claude Bod',
-    isFocused: true,
-    bodyColumns: 100,
-    placement: 'inline',
-    scroll: { offset: 0, bodyRows: 16 },
-    view: {},
-  },
-  viewport: { columns: 160, rows: 50 },
 } as const
 const PROMPT = { text: 'fix the bug', wait: false, origin: { kind: 'composer' } } as const
 const START = 1_000_000
@@ -120,6 +105,10 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     if (script?.endsWith('claude-limit.py')) {
       return world.isBroken ? { value: { exitCode: 1, stdout: '', stderr: 'boom', isStdoutTruncated: false, isStderrTruncated: false } } : ok(world.limit)
+    }
+
+    if (command === 'settings') {
+      return ok('Claude Bod is on easy.\n')
     }
 
     if (command === 'level' || command === 'every') {
@@ -280,40 +269,48 @@ test('a nudge another session raised shows up on the next poll', async ($, on) =
   expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
-test('on a wide terminal an exercise takes over a panel in giant letters', async ($, on) => {
+test('an exercise set takes over the band in a box, one exercise per line, never a side panel', async ($, on) => {
   const clock = mock.clock(on, { now: START })
-  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  const world = fakeBod(on, clock, { kind: 'move', text: '8 push ups, then 15 jumping jacks, then 15 squats', seconds: null })
   world.isWide = true
   await $.session.start(SESSION)
-
-  expect(world.isPanelOpen).toBe(true)
-
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const panel = await $.ui.mount({ ...PANEL, surface: 'terminal' })
-
-  // The panel has the nudge, so the band leaves it alone.
-  expect(await band.find({ key: 'go' })).toBeUndefined()
-  expect(await panel.findAll({ type: 'Text', text: '█' })).toHaveLength(banner('10 SQUATS', 94).length)
-
-  await panel.press({ key: 'go' })
-  await clock.advance(7_000)
-
-  expect(await panel.find({ type: 'Text', text: '⏱ 0:07' })).toBeDefined()
-
-  await panel.press({ key: 'done' })
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 20 }, surface: 'terminal' })
 
   expect(world.isPanelOpen).toBe(false)
+  expect(await ui.find({ text: '1. 8 push ups' })).toBeDefined()
+  expect(await ui.find({ text: '2. 15 jumping jacks' })).toBeDefined()
+  expect(await ui.find({ text: '3. 15 squats' })).toBeDefined()
+
+  await ui.press({ key: 'go' })
+  await clock.advance(7_000)
+
+  expect(await ui.find({ type: 'Text', text: '⏱ 0:07' })).toBeDefined()
+
+  await ui.press({ key: 'done' })
+
   expect(world.toasts).toEqual(['Nice, 0:07 💪'])
+  expect(await ui.find({ text: /squats/ })).toBeUndefined()
 })
 
-test('with no panel on screen the band draws the giant card when it has the rows', async ($, on) => {
+test('a standing nudge gets the box too', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   fakeBod(on, clock, { kind: 'stand', text: 'Go use your standing desk.', seconds: null })
   await $.session.start(SESSION)
   const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 20 }, surface: 'terminal' })
 
-  expect(await ui.findAll({ type: 'Text', text: '█' })).toHaveLength(banner('STAND UP', 94).length)
+  expect(await ui.find({ text: /Stand up/ })).toBeDefined()
+  expect(await ui.find({ text: 'Go use your standing desk.' })).toBeDefined()
   expect(await ui.find({ key: 'snooze' })).toBeDefined()
+})
+
+test('where the band is too short for the box, the nudge is one line', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'move', text: '8 push ups, then 15 jumping jacks, then 15 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /Movement break: 8 push ups → 15 jumping jacks → 15 squats/ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
 test('no prompt is sent while an exercise is on show, and her words are kept', async ($, on) => {
@@ -396,7 +393,7 @@ test('every prompt is recorded as work', async ($, on) => {
   expect(world.commands).toContain('hook')
 })
 
-test('/bod level and /bod every set Claude Bod, and /bod alone opens the panel', async ($, on) => {
+test('/bod level and /bod every set Claude Bod, and /bod alone says what it is set to', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
@@ -409,11 +406,11 @@ test('/bod level and /bod every set Claude Bod, and /bod alone opens the panel',
   expect(world.commands).toContain('level hard every 15')
   expect(world.isPanelOpen).toBe(false)
 
-  await $.command.run(BOD(''))
-  expect(world.isPanelOpen).toBe(true)
+  expect(await $.command.run(BOD(''))).toMatchObject({ text: 'Claude Bod is on easy. /bod now for an exercise right away.' })
+  expect(world.isPanelOpen).toBe(false)
 })
 
-test('/bod now puts an exercise up at once and opens the panel', async ($, on) => {
+test('/bod now puts an exercise up at once, in the band', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
@@ -424,13 +421,6 @@ test('/bod now puts an exercise up at once and opens the panel', async ($, on) =
   world.due = { at: START, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
   expect(await $.command.run(BOD('now'))).toMatchObject({ text: '🤸 Movement break: 10 squats' })
   expect(world.commands).toContain('now')
-  expect(world.isPanelOpen).toBe(true)
+  expect(world.isPanelOpen).toBe(false)
   expect(await ui.find({ key: 'go' })).toBeDefined()
-})
-
-test('giant letters wrap by word to the room there is', () => {
-  expect(banner('10 squats', 100)).toHaveLength(5)
-  expect(banner('5 lunges each leg', 60)).toHaveLength(11)
-  expect(banner('5 lunges each leg', 60).every(row => row.length <= 60)).toBe(true)
-  expect(banner('0:07', 100)[1]).toBe('█  ██ █ █  ██     █')
 })
