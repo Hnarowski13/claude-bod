@@ -61,6 +61,27 @@ export const reading = (nudge: Nudge, at: number) => {
   return { digits: clock(left), isOver: left === 0, text: left === 0 ? "time's up! 🎉" : `${clock(left)} left` }
 }
 
+// The status line: how long until the next exercise and standing nudge, or
+// undefined while one is on show. Rounded up, so 0:00 is the moment it's due.
+export const countdown = (shown: View | null, at: number) => {
+  if (shown?.paused) {
+    return '⏸ Claude Bod is paused until your next prompt'
+  }
+
+  if (!shown?.next) {
+    return undefined
+  }
+
+  const { move, stand } = shown.next
+  const left = (due: number) => clock(Math.max(0, Math.ceil((due - at) / 1000)))
+  const parts = [
+    move === undefined ? null : `${ICONS.move} move in ${left(move)}`,
+    stand === undefined ? null : `${ICONS.stand} stand in ${left(stand)}`,
+  ].filter(part => part !== null)
+
+  return parts.length > 0 ? parts.join(' · ') : undefined
+}
+
 // What the giant letters say before go is pressed.
 export const shout = (nudge: Nudge) => (nudge.kind === 'stand' ? 'STAND UP' : nudge.text.replace(/^an? /, ''))
 
@@ -68,6 +89,11 @@ export const shout = (nudge: Nudge) => (nudge.kind === 'stand' ? 'STAND UP' : nu
 let script: string | null = null
 // The `started` of the countdown this session already asked to beep for.
 let beepAsked: number | null = null
+// What the status line says now, so it's only set when that changes.
+let status: string | undefined
+// The due time this session already polled for, so a nudge shows the second
+// its countdown ends instead of on the next 5 second poll.
+let dueAsked: number | null = null
 
 async function bod($: EngineInterface, command: Command): Promise<Reply | null> {
   if (script === null) {
@@ -81,11 +107,11 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
       return null
     }
 
-    const { nudge, stop, ...rest } = JSON.parse(stdout) as Reply
+    const { nudge, stop, next = null, paused = false, ...rest } = JSON.parse(stdout) as Reply
 
-    await show($, { nudge, stop }, rest.now)
+    await show($, { nudge, stop, next, paused }, rest.now)
 
-    return { nudge, stop, ...rest }
+    return { nudge, stop, next, paused, ...rest }
   } catch {
     return null
   }
@@ -152,15 +178,32 @@ async function show($: EngineInterface, next: View | null, at: number) {
   }
 }
 
-// Runs once a second: moves the timer on show, and rings at a countdown's end.
+// Runs once a second: moves the countdown in the status line and the timer on
+// show, and rings at a timer's end.
 async function second($: EngineInterface) {
-  const nudge = (await read($, view))?.nudge
+  let shown = await read($, view)
+  const at = await $.clock.now()
+  const due = Math.min(...Object.values(shown?.next ?? {}))
+
+  if (due <= at && dueAsked !== due) {
+    dueAsked = due
+    await bod($, 'tick')
+    shown = await read($, view)
+  }
+
+  const text = countdown(shown, at)
+
+  if (text !== status) {
+    status = text
+    $.ui.status(text)
+  }
+
+  const nudge = shown?.nudge
 
   if (!nudge || nudge.started === null) {
     return
   }
 
-  const at = await $.clock.now()
   await update($, now, () => at)
 
   const isOver = nudge.seconds !== null && at - nudge.started >= nudge.seconds * 1000

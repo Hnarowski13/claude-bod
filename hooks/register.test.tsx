@@ -53,6 +53,13 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // claude-limit.py: what it prints, '' when this session is within the cap.
     limit: '',
     refilled: [] as string[],
+    // When the move / stand nudges are due, as bod.py would send it.
+    next: null as { move?: number; stand?: number } | null,
+    paused: false,
+    // What the status line says, as the engine would draw it.
+    status: undefined as string | undefined,
+    // A nudge bod.py puts on show once the clock reaches `at`.
+    due: null as { at: number; nudge: Nudge } | null,
   }
 
   on('session.start', () => ({ cwd: '/repo' }))
@@ -85,6 +92,11 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       ? [{ id: 'bod', title: 'Claude Bod', isShown: true, isFocused: true, isPlaced: world.isWide }]
       : [],
   }))
+  on('ui.status', (_$, e) => {
+    world.status = e.text
+
+    return { value: undefined }
+  })
   on('ui.toast', (_$, e) => {
     world.toasts.push(e.text)
 
@@ -121,6 +133,13 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     world.commands.push(command ?? '')
+
+    if (world.due && clock.now() >= world.due.at) {
+      world.nudge = world.due.nudge
+      world.next = null
+      world.due = null
+    }
+
     const said: { took?: number; beep?: boolean } = {}
     const { nudge } = world
 
@@ -139,11 +158,46 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       said.beep = true
     }
 
-    return ok(JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, ...said }))
+    return ok(
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, ...said })
+    )
   })
 
   return world
 }
+
+test('the status line counts down to the next nudge, and it shows the second it is due', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000, stand: START + 1_200_000 }
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('🤸 move in 3:01 · 🚶 stand in 19:59')
+
+  await clock.advance(60_000)
+
+  expect(world.status).toBe('🤸 move in 2:01 · 🚶 stand in 18:59')
+
+  // Due at 3:02. The 5 second poll last ran at 3:00 and next runs at 3:05;
+  // the mod asks bod.py itself the second the countdown ends.
+  world.due = { at: START + 182_000, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
+  await clock.advance(121_000)
+
+  expect(await ui.find({ text: /squats/ })).toBeDefined()
+  expect(world.status).toBeUndefined()
+})
+
+test('the status line says when Claude Bod is paused', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.paused = true
+  await $.session.start(SESSION)
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('⏸ Claude Bod is paused until your next prompt')
+})
 
 test('an exercise: go starts a timer that counts up, done ends it', async ($, on) => {
   const clock = mock.clock(on, { now: START })

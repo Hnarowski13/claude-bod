@@ -130,6 +130,51 @@ class Press(unittest.TestCase):
         self.assertEqual(bod.press(state, "done", NOW), {})
 
 
+class Upcoming(unittest.TestCase):
+    EVERY_5 = {"level": "easy", "every": 5}
+
+    def next_in(self, state, now=NOW):
+        """{kind: seconds until it's due} from what the mod is sent."""
+        shown = bod.view(state, now, self.EVERY_5)
+        if shown["next"] is None:
+            return None
+        return {kind: (ms - int(now.timestamp() * 1000)) // 1000 for kind, ms in shown["next"].items()}
+
+    def test_counts_down_to_the_exercise_and_the_standing_desk(self):
+        state = working(move=2, stand=10)
+        self.assertEqual(self.next_in(state), {"move": 180, "stand": 1200})
+
+    def test_hits_zero_the_moment_the_nudge_goes_on_show(self):
+        state = working(move=2)
+        due = NOW + minutes(3)
+        self.assertEqual(self.next_in(state, due)["move"], 0)
+        bod.advance(state, due, NOT_OVER, self.EVERY_5)
+        self.assertEqual(state["pending"]["kind"], "move")
+
+    def test_nothing_to_count_while_a_nudge_is_on_show(self):
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
+        self.assertIsNone(self.next_in(state))
+
+    def test_not_now_counts_down_to_the_same_nudge_coming_back(self):
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
+        bod.press(state, "snooze", NOW)
+        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
+
+    def test_after_done_nothing_is_due_before_the_quiet_minute_ends(self):
+        state = working(move=6, stand=40)
+        bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
+        bod.press(state, "done", NOW)
+        self.assertEqual(self.next_in(state), {"move": 300, "stand": bod.QUIET_SECONDS})
+
+    def test_away_long_enough_it_says_paused_instead(self):
+        state = working(move=2, prompt=bod.BREAK_MINUTES)
+        shown = bod.view(state, NOW, self.EVERY_5)
+        self.assertTrue(shown["paused"])
+        self.assertIsNone(shown["next"])
+
+
 class Prompted(unittest.TestCase):
     def test_with_the_mod_running_claude_is_handed_nothing(self):
         state = working(move=50, stand=50, kind=50, prompt=1)
