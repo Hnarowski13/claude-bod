@@ -13,6 +13,10 @@ export type View = {
   nudge: Nudge | null
   /** The "stop for the day" line, once today's hours are past the cap. */
   stop: string | null
+  /** When the exercise / standing nudges are next due; null while one is on show. */
+  next?: { move?: number; stand?: number } | null
+  /** She's been away long enough that nothing shows until her next prompt. */
+  paused?: boolean
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */

@@ -376,12 +376,34 @@ def press(state, button, now):
     return {}
 
 
-def view(state, now):
-    """What the band shows, with times in epoch milliseconds for the mod."""
+def upcoming(state, now, settings=None):
+    """When the exercise and standing nudges will next show, or None while one
+    is on show. Nothing new shows during the pause after a done, and a nudge
+    put off with "not now" comes back when its snooze ends, ahead of the rest."""
+    pending = state["pending"]
+    if pending:
+        snoozed = pending["snoozed_until"]
+        if snoozed and now < snoozed and pending["kind"] in ("move", "stand"):
+            return {pending["kind"]: snoozed}
+        return None
+    settings = settings or load_settings()
+    earliest = state["quiet_until"] or now
+    return {
+        "move": max(state["last_move"] + timedelta(minutes=settings["every"]), earliest),
+        "stand": max(state["last_stand"] + timedelta(minutes=STAND_MINUTES), earliest),
+    }
+
+
+def view(state, now, settings=None):
+    """What the band shows, with times in epoch milliseconds for the mod.
+    "next" is when each nudge is due; "paused" means she's been away long
+    enough that nothing shows until her next prompt restarts the timers."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
 
+    paused = away(state, now)
+    due_at = None if paused else upcoming(state, now, settings)
     nudge = state["pending"]
     if nudge and nudge["snoozed_until"] and now < nudge["snoozed_until"]:
         nudge = None
@@ -392,7 +414,13 @@ def view(state, now):
             "seconds": nudge["seconds"],
             "started": ms(nudge["started"]) if nudge["started"] else None,
         }
-    return {"now": ms(now), "nudge": nudge, "stop": state["stop"]["text"] if state["stop"] else None}
+    return {
+        "now": ms(now),
+        "nudge": nudge,
+        "stop": state["stop"]["text"] if state["stop"] else None,
+        "next": {kind: ms(when) for kind, when in due_at.items()} if due_at else None,
+        "paused": paused,
+    }
 
 
 def mod(button):
