@@ -20,6 +20,8 @@ Entry points:
                   The mod's buttons: start the exercise timer, finish the
                   nudge, put it off for SNOOZE_MINUTES, and claim the sound
                   at the end of a countdown (one session plays it, not all).
+  bod.py now      `/bod now`: the next exercise on show right away, the
+                  other timers left as they are.
   bod.py show move | plank | stand | kind
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
@@ -340,6 +342,25 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
         state["pending"] = {**pending, "started": None, "snoozed_until": None, "beeped": False}
 
 
+def right_now(state, now, settings=None):
+    """`/bod now`: the next exercise on show at once, without waiting for its
+    timer or touching the others. A nudge already up stays; one put off with
+    "not now" comes straight back."""
+    pending = state["pending"]
+    # Asking counts as being here: a tick won't drop it as stale.
+    state["last_prompt"] = now
+    state["quiet_until"] = None
+    if pending:
+        pending["snoozed_until"] = None
+        return
+    settings = settings or load_settings()
+    text, seconds, count = exercise(state["moves"], settings["level"])
+    state["pending"] = {
+        "kind": "move", "text": text, "seconds": seconds, "count": count,
+        "started": None, "snoozed_until": None, "beeped": False,
+    }
+
+
 def press(state, button, now):
     """Apply one of the mod's buttons. Returns what to tell the mod besides
     the view: how long a finished exercise took, or that it should beep."""
@@ -431,6 +452,8 @@ def mod(button):
         if button == "tick":
             state["mod_seen"] = now
             advance(state, now)
+        elif button == "now":
+            right_now(state, now)
         else:
             said = press(state, button, now)
         save_state(state)
@@ -515,7 +538,7 @@ if __name__ == "__main__":
             hook()
         except Exception:
             pass
-    elif mode in ("tick", "go", "done", "snooze", "beep"):
+    elif mode in ("tick", "now", "go", "done", "snooze", "beep"):
         mod(mode)
     elif mode in ("level", "every"):
         choose(sys.argv[1:])
