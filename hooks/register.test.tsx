@@ -3,6 +3,7 @@ import type { On } from 'claude-code'
 
 import type { Nudge } from '../types'
 import { banner } from './banner'
+import { giant, shout } from './register'
 
 const BAND = {
   plugin: 'bod',
@@ -418,4 +419,23 @@ test('giant letters wrap by word to the room there is', () => {
   expect(banner('5 lunges each leg', 60)).toHaveLength(11)
   expect(banner('5 lunges each leg', 60).every(row => row.length <= 60)).toBe(true)
   expect(banner('0:07', 100)[1]).toBe('█  ██ █ █  ██     █')
+})
+
+test('a set of exercises: arrows between them on one line, a line each in giant letters', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const text = '8 push ups, then 15 jumping jacks, then 15 squats'
+  fakeBod(on, clock, { kind: 'move', text, seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: 'Movement break: 8 push ups → 15 jumping jacks → 15 squats' })).toBeDefined()
+
+  const nudge: Nudge = { kind: 'move', text, seconds: null, started: null }
+  expect(giant(shout(nudge), 94)).toEqual([
+    ...banner('8 push ups', 94),
+    '',
+    ...banner('15 jumping jacks', 94),
+    '',
+    ...banner('15 squats', 94),
+  ])
 })

@@ -36,9 +36,15 @@ type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
 export const clock = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
+// The exercises in a set, in order: bod.py joins them with ", then ".
+export const steps = (nudge: Nudge) => nudge.text.split(', then ')
+
+// A set on one line, an arrow between exercises.
+const inLine = (nudge: Nudge) => steps(nudge).join(' → ')
+
 export const headline = (nudge: Nudge) => {
   if (nudge.kind === 'move') {
-    return `Movement break: ${nudge.text}`
+    return `Movement break: ${inLine(nudge)}`
   }
 
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
@@ -82,8 +88,14 @@ export const countdown = (shown: View | null, at: number) => {
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
 
-// What the giant letters say before go is pressed.
-export const shout = (nudge: Nudge) => (nudge.kind === 'stand' ? 'STAND UP' : nudge.text.replace(/^an? /, ''))
+// What the giant letters say before go is pressed: each exercise of a set
+// starts a line of its own.
+export const shout = (nudge: Nudge) =>
+  nudge.kind === 'stand' ? ['STAND UP'] : steps(nudge).map(step => step.replace(/^an? /, ''))
+
+// `phrases` in giant letters, each starting a new line, a blank row between.
+export const giant = (phrases: string[], columns: number) =>
+  phrases.flatMap((phrase, index) => [...(index > 0 ? [''] : []), ...banner(phrase, columns)])
 
 // Where bod.py is, once session.start has checked it runs; null when it doesn't.
 let script: string | null = null
@@ -243,8 +255,8 @@ function card(
 ) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
-  const letters = banner(
-    isRunning ? (timer.isOver ? 'TIME!' : timer.digits) : shout(nudge),
+  const letters = giant(
+    isRunning ? [timer.isOver ? 'TIME!' : timer.digits] : shout(nudge),
     room.columns - CARD_CHROME_COLUMNS
   )
 
@@ -289,7 +301,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     return (
       <Box key="nudge" gap={1} flexWrap="wrap">
         <Text bold>
-          {ICONS[nudge.kind]} {nudge.kind === 'stand' ? 'Standing / walking' : nudge.text}
+          {ICONS[nudge.kind]} {nudge.kind === 'stand' ? 'Standing / walking' : inLine(nudge)}
         </Text>
         <Text color="success">⏱ {reading(nudge, at).text}</Text>
         <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
