@@ -30,6 +30,11 @@ export type Reply = View & {
 
 declare module 'claude-code' {
   interface PluginState {
-    'bod': { view: View | null; now: number }
+    'bod': {
+      view: View | null
+      now: number
+      /** The "✅ Nice job!" under the prompt after a done, and until when (epoch ms). */
+      cheer: { text: string; until: number } | null
+    }
   }
 }

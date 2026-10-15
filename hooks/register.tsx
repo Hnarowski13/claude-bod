@@ -23,6 +23,9 @@ const CARD_CHROME_ROWS = 6
 
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
+const cheer = atom({ plugin: 'bod', key: 'cheer' } as const, null)
+// How long "✅ Nice job!" stays under the prompt after a done.
+const CHEER_MS = 30_000
 
 type Command = 'tick' | 'now' | 'go' | 'done' | 'snooze' | 'beep'
 type Press = { go: () => void; done: () => void; snooze: () => void }
@@ -186,6 +189,12 @@ async function second($: EngineInterface) {
     $.ui.status(text)
   }
 
+  const cheered = await read($, cheer)
+
+  if (cheered && at >= cheered.until) {
+    await update($, cheer, () => null)
+  }
+
   const nudge = shown?.nudge
 
   if (!nudge || nudge.started === null) {
@@ -211,6 +220,10 @@ async function finish($: EngineInterface) {
 
   if (reply !== null) {
     $.ui.toast(reply.took === undefined ? 'Nice 💛' : `Nice, ${clock(reply.took)} 💪`)
+
+    const text = reply.took === undefined ? '✅ Nice job!' : `✅ Nice job! ${clock(reply.took)}`
+    const until = (await $.clock.now()) + CHEER_MS
+    await update($, cheer, () => ({ text, until }))
   }
 }
 
@@ -368,6 +381,20 @@ export const register: Register = on => {
     return {
       drop: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)} first! Press go and then done, or "not now" for 5 minutes (click a button, or ctrl+x tab for the keys).`,
     }
+  })
+
+  // "✅ Nice job!" at the end of the hint line under the prompt, for a while
+  // after a done.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const cheered = await read($, cheer)
+
+    if (!cheered) {
+      return next(e)
+    }
+
+    const tail = [e.props.tail, cheered.text].filter(Boolean).join(' · ')
+
+    return next({ ...e, props: { ...e.props, tail } })
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
