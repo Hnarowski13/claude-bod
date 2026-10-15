@@ -175,6 +175,45 @@ class Upcoming(unittest.TestCase):
         self.assertIsNone(shown["next"])
 
 
+class RightNow(unittest.TestCase):
+    EASY = {"level": "easy", "every": 5}
+
+    def test_the_next_exercise_goes_up_without_waiting(self):
+        state = working(move=1, stand=10)
+        bod.right_now(state, NOW, self.EASY)
+        self.assertEqual(state["pending"]["kind"], "move")
+        self.assertEqual(state["pending"]["text"], "5 push ups")
+        # The other timers carry on as they were.
+        self.assertEqual(state["last_stand"], NOW - minutes(10))
+
+    def test_done_restarts_the_exercise_timer_and_moves_the_rotation_on(self):
+        state = working(move=1)
+        bod.right_now(state, NOW, self.EASY)
+        bod.press(state, "done", NOW + minutes(1))
+        self.assertEqual(state["last_move"], NOW + minutes(1))
+        self.assertEqual(state["moves"], 1)
+
+    def test_a_nudge_already_up_stays(self):
+        state = working(stand=31)
+        bod.advance(state, NOW, NOT_OVER, self.EASY)
+        bod.right_now(state, NOW, self.EASY)
+        self.assertEqual(state["pending"]["kind"], "stand")
+
+    def test_a_nudge_put_off_comes_straight_back(self):
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, self.EASY)
+        bod.press(state, "snooze", NOW)
+        bod.right_now(state, NOW + minutes(1), self.EASY)
+        self.assertEqual(bod.view(state, NOW + minutes(1), self.EASY)["nudge"]["text"], "5 push ups")
+
+    def test_it_shows_even_after_she_was_away_or_just_pressed_done(self):
+        state = working(move=1, prompt=bod.BREAK_MINUTES + 5)
+        state["quiet_until"] = NOW + minutes(1)
+        bod.right_now(state, NOW, self.EASY)
+        bod.advance(state, NOW, NOT_OVER, self.EASY)
+        self.assertEqual(bod.view(state, NOW, self.EASY)["nudge"]["kind"], "move")
+
+
 class Prompted(unittest.TestCase):
     def test_with_the_mod_running_claude_is_handed_nothing(self):
         state = working(move=50, stand=50, kind=50, prompt=1)

@@ -413,6 +413,21 @@ test('/bod level and /bod every set Claude Bod, and /bod alone opens the panel',
   expect(world.isPanelOpen).toBe(true)
 })
 
+test('/bod now puts an exercise up at once and opens the panel', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+
+  world.due = { at: START, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
+  expect(await $.command.run(BOD('now'))).toMatchObject({ text: '🤸 Movement break: 10 squats' })
+  expect(world.commands).toContain('now')
+  expect(world.isPanelOpen).toBe(true)
+  expect(await ui.find({ key: 'go' })).toBeDefined()
+})
+
 test('giant letters wrap by word to the room there is', () => {
   expect(banner('10 squats', 100)).toHaveLength(5)
   expect(banner('5 lunges each leg', 60)).toHaveLength(11)

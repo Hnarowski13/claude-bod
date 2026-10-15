@@ -28,7 +28,7 @@ const CARD_CHROME_COLUMNS = 6
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
 
-type Command = 'tick' | 'go' | 'done' | 'snooze' | 'beep'
+type Command = 'tick' | 'now' | 'go' | 'done' | 'snooze' | 'beep'
 type Press = { go: () => void; done: () => void; snooze: () => void }
 // The elements a nudge is drawn with; every surface's table has them.
 type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
@@ -329,8 +329,8 @@ export const register: Register = on => {
     // by the mod alone it only shows on a wide one.
     await $.command.register({
       name: 'bod',
-      description: 'Open the Claude Bod panel, or set the level and how often to exercise',
-      argumentHint: '[level easy|medium|hard] [[every] 5|10|15]',
+      description: 'Open the Claude Bod panel, exercise right now, or set the level and how often to exercise',
+      argumentHint: '[now] [level easy|medium|hard] [[every] 5|10|15]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -351,7 +351,13 @@ export const register: Register = on => {
       return { text: await settings($, ['settings']) }
     }
 
+    const reply = setting === 'now' ? await bod($, 'now') : null
+
     await $.ui.open({ id: PANE, title: 'Claude Bod', focus: true, rows: PANE_ROWS })
+
+    if (reply?.nudge) {
+      return { text: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)}` }
+    }
 
     return { text: 'Claude Bod panel opened.' }
   })
