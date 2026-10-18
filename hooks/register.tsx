@@ -117,7 +117,7 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
 }
 
 // `/bod level hard`, `/bod every 10`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`: bod.py keeps the choice
-// and says what Claude Bod is set to now, or what to pick from.
+// and says what changed (`settings` says everything), or what to pick from.
 async function settings($: EngineInterface, args: string[]): Promise<string> {
   if (script === null) {
     return 'Claude Bod needs python3 to run.'
