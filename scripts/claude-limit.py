@@ -2,7 +2,7 @@
 """Cap how many interactive Claude sessions can be in use at once.
 
 UserPromptSubmit hook. Live sessions are ranked oldest first; a session
-outside the first LIMIT gets its prompts refused until an older one closes.
+outside the first `claudes` (a Claude Bod setting, `/bod claudes <n>`) gets its prompts refused until an older one closes.
 Fails open: if anything goes wrong, the prompt goes through.
 """
 import json
@@ -10,7 +10,6 @@ import os
 import sys
 from pathlib import Path
 
-LIMIT = 4
 SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 
 
@@ -41,15 +40,17 @@ def live_sessions():
 
 def main():
     try:
+        from bod import load_settings
+        limit = load_settings()["claudes"]
         my_id = json.load(sys.stdin).get("session_id")
         sessions = live_sessions()
         ids = [s.get("sessionId") for s in sessions]
-        if my_id not in ids or ids.index(my_id) < LIMIT:
+        if my_id not in ids or ids.index(my_id) < limit:
             return
         print(json.dumps({
             "decision": "block",
             "reason": (
-                f"You have {len(sessions)} Claudes open — the limit is {LIMIT}. "
+                f"You have {len(sessions)} Claudes open — the limit is {limit}. "
                 "Close one of the others, then send this again. Your mind will thank you."
             ),
         }))
