@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-LIMIT = 4
+LIMIT = 5
 SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 
 
