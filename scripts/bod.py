@@ -74,7 +74,9 @@ SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/
 # level: (exercises per nudge, how much the reps and seconds grow)
 LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
-DEFAULT_SETTINGS = {"level": "easy", "every": 5}
+# How many Claudes may be open at once (scripts/claude-limit.py enforces it).
+CLAUDES_CHOICES = range(1, 21)
+DEFAULT_SETTINGS = {"level": "easy", "every": 5, "claudes": 5}
 
 POSTURE = "Hey, are you sitting not good? Go use your standing desk and walking treadmill."
 # (what to do, with {} for how many, how many on easy, whether it's seconds
@@ -211,7 +213,8 @@ def load_settings():
         raw = {}
     level = raw.get("level") if raw.get("level") in LEVELS else DEFAULT_SETTINGS["level"]
     every = raw.get("every") if raw.get("every") in EVERY_CHOICES else DEFAULT_SETTINGS["every"]
-    return {"level": level, "every": every}
+    claudes = raw.get("claudes") if raw.get("claudes") in CLAUDES_CHOICES else DEFAULT_SETTINGS["claudes"]
+    return {"level": level, "every": every, "claudes": claudes}
 
 
 def save_settings(settings):
@@ -476,30 +479,35 @@ def show(kind):
 def describe(settings):
     count, _ = LEVELS[settings["level"]]
     what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
-    return f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes."
+    return (f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes, "
+            f"at most {settings['claudes']} Claudes open at once.")
 
 
 def choose(args):
-    """Set the level and/or the minutes, given as pairs ("level hard every 10",
-    or just "level hard 10"); prints what Claude Bod is set to now. Nothing is
+    """Set the level, the minutes and/or the Claude cap, given as pairs
+    ("level hard every 10 claudes 5", or just "level hard 10"); prints what Claude Bod is set to now. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
     args = [part for i, arg in enumerate(args)
-            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] != "every") else [arg])]
+            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "claudes")) else [arg])]
     if not args or len(args) % 2:
         args = [*args, ""]
     for key, value in zip(args[::2], args[1::2]):
         if key == "every":
             value = int(value) if value.isdigit() else None
             choices = EVERY_CHOICES
+        elif key == "claudes":
+            value = int(value) if value.isdigit() else None
+            choices = CLAUDES_CHOICES
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15.")
+            print("Use: level easy|medium|hard, every 5|10|15, claudes 1-20.")
             sys.exit(1)
         if value not in choices:
-            print(f"Pick one of: {', '.join(str(c) for c in choices)}.")
+            print(f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
+                  else f"Pick one of: {', '.join(str(c) for c in choices)}.")
             sys.exit(1)
         settings[key] = value
     save_settings(settings)
@@ -540,7 +548,7 @@ if __name__ == "__main__":
             pass
     elif mode in ("tick", "now", "go", "done", "snooze", "beep"):
         mod(mode)
-    elif mode in ("level", "every"):
+    elif mode in ("level", "every", "claudes"):
         choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))

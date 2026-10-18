@@ -118,7 +118,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod is on easy.\n')
     }
 
-    if (command === 'level' || command === 'every') {
+    if (command === 'level' || command === 'every' || command === 'claudes') {
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
@@ -400,7 +400,7 @@ test('every prompt is recorded as work', async ($, on) => {
   expect(world.commands).toContain('hook')
 })
 
-test('/bod level and /bod every set Claude Bod, and /bod alone says what it is set to', async ($, on) => {
+test('/bod level, /bod every and /bod claudes set Claude Bod, and /bod alone says what it is set to', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
@@ -411,6 +411,8 @@ test('/bod level and /bod every set Claude Bod, and /bod alone says what it is s
   expect(world.commands).toContain('every 10')
   await $.command.run(BOD('level hard every 15'))
   expect(world.commands).toContain('level hard every 15')
+  expect(await $.command.run(BOD('claudes 5'))).toMatchObject({ text: 'Claude Bod is on 5.' })
+  expect(world.commands).toContain('claudes 5')
   expect(world.isPanelOpen).toBe(false)
 
   expect(await $.command.run(BOD(''))).toMatchObject({ text: 'Claude Bod is on easy. /bod now for an exercise right away.' })

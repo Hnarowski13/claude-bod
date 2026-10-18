@@ -276,14 +276,14 @@ class Levels(unittest.TestCase):
 
     def test_done_moves_the_rotation_past_the_whole_set(self):
         state = working(move=6)
-        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5})
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "claudes": 5})
         bod.press(state, "done", NOW)
         self.assertEqual(state["moves"], 3)
 
     def test_a_bad_settings_file_falls_back_to_the_defaults(self):
         with open(bod.SETTINGS_PATH, "w") as fh:
             fh.write('{"level": "extreme", "every": 7}')
-        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5})
+        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "claudes": 5})
 
 
 class CommandLine(unittest.TestCase):
@@ -329,23 +329,29 @@ class CommandLine(unittest.TestCase):
         run = lambda *args: subprocess.run(  # noqa: E731
             [sys.executable, os.path.join(HERE, "bod.py"), *args], capture_output=True, text=True
         )
-        self.assertEqual(run("level", "hard").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 5 minutes.")
-        self.assertEqual(run("every", "15").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15})
-        self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes.")
+        self.assertEqual(run("level", "hard").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 5 minutes, at most 5 Claudes open at once.")
+        self.assertEqual(run("every", "15").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, at most 5 Claudes open at once.")
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "claudes": 5})
+        self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, at most 5 Claudes open at once.")
         both = run("level", "medium", "every", "10")
-        self.assertEqual(both.stdout.strip(), "Claude Bod is on medium: 2 exercises every 10 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10})
+        self.assertEqual(both.stdout.strip(), "Claude Bod is on medium: 2 exercises every 10 minutes, at most 5 Claudes open at once.")
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "claudes": 5})
         short = run("level", "hard", "15")
-        self.assertEqual(short.stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15})
+        self.assertEqual(short.stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, at most 5 Claudes open at once.")
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "claudes": 5})
         run("level", "medium", "every", "10")
         half_bad = run("level", "easy", "every", "7")
         self.assertEqual(half_bad.returncode, 1)
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "claudes": 5})
         bad = run("every", "7")
         self.assertEqual(bad.returncode, 1)
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15.")
+        self.assertEqual(run("claudes", "3").stdout.strip(), "Claude Bod is on medium: 2 exercises every 10 minutes, at most 3 Claudes open at once.")
+        self.assertEqual(bod.load_settings()["claudes"], 3)
+        too_many = run("claudes", "50")
+        self.assertEqual(too_many.returncode, 1)
+        self.assertEqual(too_many.stdout.strip(), "Pick a number from 1 to 20.")
+        self.assertEqual(bod.load_settings()["claudes"], 3)
         os.remove(bod.SETTINGS_PATH)
 
     def test_a_state_file_from_before_the_mod_still_loads(self):
