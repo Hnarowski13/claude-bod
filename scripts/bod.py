@@ -485,7 +485,7 @@ def describe(settings):
 
 def choose(args):
     """Set the level, the minutes and/or the Claude cap, given as pairs
-    ("level hard every 10 claudes 5", or just "level hard 10"); prints what Claude Bod is set to now. Nothing is
+    ("level hard every 10 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
@@ -511,7 +511,18 @@ def choose(args):
             sys.exit(1)
         settings[key] = value
     save_settings(settings)
-    print(describe(settings))
+    print(" ".join(confirm(key, settings) for key in dict.fromkeys(args[::2])))
+
+
+def confirm(key, settings):
+    """One line saying what a setting is now."""
+    if key == "level":
+        count, _ = LEVELS[settings["level"]]
+        what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+        return f"Your level is now {settings['level']}: {what} per nudge."
+    if key == "every":
+        return f"Your exercises are now every {settings['every']} minutes."
+    return f"Your Claude cap is now {settings['claudes']}."
 
 
 def status():
