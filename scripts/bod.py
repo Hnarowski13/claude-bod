@@ -403,15 +403,16 @@ def press(state, button, now):
 def upcoming(state, now, settings=None):
     """When the exercise and standing nudges will next show, or None while one
     is on show. Nothing new shows during the pause after a done, and a nudge
-    put off with "not now" comes back when its snooze ends, ahead of the rest."""
+    put off with "not now" comes back when its snooze ends, ahead of the rest,
+    so the other one can't show before then either."""
     pending = state["pending"]
+    earliest = state["quiet_until"] or now
     if pending:
         snoozed = pending["snoozed_until"]
-        if snoozed and now < snoozed and pending["kind"] in ("move", "stand"):
-            return {pending["kind"]: snoozed}
-        return None
+        if not (snoozed and now < snoozed):
+            return None
+        earliest = snoozed
     settings = settings or load_settings()
-    earliest = state["quiet_until"] or now
     return {
         "move": max(state["last_move"] + timedelta(minutes=settings["every"]), earliest),
         "stand": max(state["last_stand"] + timedelta(minutes=STAND_MINUTES), earliest),

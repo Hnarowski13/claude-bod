@@ -160,7 +160,17 @@ class Upcoming(unittest.TestCase):
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "snooze", NOW)
-        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
+        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60, "stand": 1800})
+
+    def test_not_now_on_standing_keeps_the_exercise_countdown(self):
+        state = working(move=2, stand=31)
+        bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
+        self.assertEqual(state["pending"]["kind"], "stand")
+        bod.press(state, "snooze", NOW)
+        # The exercise waits for the standing nudge to come back and be done.
+        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60, "stand": bod.SNOOZE_MINUTES * 60})
+        later = NOW + minutes(4)
+        self.assertEqual(self.next_in(state, later), {"move": 60, "stand": 60})
 
     def test_after_done_nothing_is_due_before_the_quiet_minute_ends(self):
         state = working(move=6, stand=40)
