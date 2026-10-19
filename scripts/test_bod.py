@@ -375,5 +375,15 @@ class CommandLine(unittest.TestCase):
                 self.assertEqual(json.load(fh)["moves"], 4)
 
 
+
+class Worked(unittest.TestCase):
+    def test_the_view_carries_todays_hours_in_seconds(self):
+        shown = bod.view(working(), NOW, worked=timedelta(hours=2, minutes=5))
+        self.assertEqual(shown["worked"], 7500)
+
+    def test_hours_that_could_not_be_counted_are_left_out(self):
+        self.assertIsNone(bod.view(working(), NOW)["worked"])
+
+
 if __name__ == "__main__":
     unittest.main()

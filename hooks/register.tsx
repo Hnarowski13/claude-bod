@@ -8,6 +8,9 @@
 // put off with "not now"). Kindness nudges and the "stop for the day" line
 // show in the same band as a single line.
 //
+// The status line under the prompt keeps a running total of today's hours,
+// beside the countdowns to the next nudges.
+//
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
 import { atom, read, update } from 'claude-code'
@@ -63,25 +66,38 @@ export const reading = (nudge: Nudge, at: number) => {
   return { digits: clock(left), isOver: left === 0, text: left === 0 ? "time's up! 🎉" : `${clock(left)} left` }
 }
 
-// The status line: how long until the next exercise and standing nudge, or
-// undefined while one is on show. Rounded up, so 0:00 is the moment it's due.
+// Time worked today the way bod.py's /work-check says it: 14m, 2h 05m.
+export const hours = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60)
+
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m` : `${minutes}m`
+}
+
+// The status line: how long she's worked today, then how long until the next
+// exercise and standing nudge (left out while one is on show). Rounded up, so
+// 0:00 is the moment it's due.
 export const countdown = (shown: View | null, at: number) => {
+  const worked = typeof shown?.worked === 'number' ? `⏱ ${hours(shown.worked)} today` : null
+  const parts: string[] = []
+
   if (shown?.paused) {
-    return '⏸ Claude Bod is paused until your next prompt'
+    parts.push('⏸ Claude Bod is paused until your next prompt')
+  } else if (shown?.next) {
+    const { move, stand } = shown.next
+    const left = (due: number) => clock(Math.max(0, Math.ceil((due - at) / 1000)))
+
+    if (move !== undefined) {
+      parts.push(`${ICONS.move} move in ${left(move)}`)
+    }
+
+    if (stand !== undefined) {
+      parts.push(`${ICONS.stand} stand in ${left(stand)}`)
+    }
   }
 
-  if (!shown?.next) {
-    return undefined
-  }
+  const line = [worked, ...parts].filter(part => part !== null)
 
-  const { move, stand } = shown.next
-  const left = (due: number) => clock(Math.max(0, Math.ceil((due - at) / 1000)))
-  const parts = [
-    move === undefined ? null : `${ICONS.move} move in ${left(move)}`,
-    stand === undefined ? null : `${ICONS.stand} stand in ${left(stand)}`,
-  ].filter(part => part !== null)
-
-  return parts.length > 0 ? parts.join(' · ') : undefined
+  return line.length > 0 ? line.join(' · ') : undefined
 }
 
 // Where bod.py is, once session.start has checked it runs; null when it doesn't.
@@ -106,11 +122,11 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
       return null
     }
 
-    const { nudge, stop, next = null, paused = false, ...rest } = JSON.parse(stdout) as Reply
+    const { nudge, stop, next = null, paused = false, worked = null, ...rest } = JSON.parse(stdout) as Reply
 
-    await show($, { nudge, stop, next, paused }, rest.now)
+    await show($, { nudge, stop, next, paused, worked }, rest.now)
 
-    return { nudge, stop, next, paused, ...rest }
+    return { nudge, stop, next, paused, worked, ...rest }
   } catch {
     return null
   }

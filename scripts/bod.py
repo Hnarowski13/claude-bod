@@ -15,7 +15,8 @@ Entry points:
                   hands Claude the nudges to pass on in its reply.
   bod.py tick     What the mod (hooks/register.tsx) polls:
                   puts the next nudge on show once one is due and prints
-                  what the band above the prompt should show, as JSON.
+                  what the band above the prompt and the status line should
+                  show, as JSON, today's hours worked among it.
   bod.py go | done | snooze | beep
                   The mod's buttons: start the exercise timer, finish the
                   nudge, put it off for SNOOZE_MINUTES, and claim the sound
@@ -419,10 +420,11 @@ def upcoming(state, now, settings=None):
     }
 
 
-def view(state, now, settings=None):
+def view(state, now, settings=None, worked=None):
     """What the band shows, with times in epoch milliseconds for the mod.
     "next" is when each nudge is due; "paused" means she's been away long
-    enough that nothing shows until her next prompt restarts the timers."""
+    enough that nothing shows until her next prompt restarts the timers;
+    "worked" is how many seconds she's worked today, when it was counted."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
@@ -445,7 +447,17 @@ def view(state, now, settings=None):
         "stop": state["stop"]["text"] if state["stop"] else None,
         "next": {kind: ms(when) for kind, when in due_at.items()} if due_at else None,
         "paused": paused,
+        "worked": int(worked.total_seconds()) if worked is not None else None,
     }
+
+
+def worked_so_far(now):
+    """Today's hours for the status line, or None when the transcripts can't
+    be read (one deleted mid-read, say): a missing timer beats a broken tick."""
+    try:
+        return today(now)[0]
+    except OSError:
+        return None
 
 
 def mod(button):
@@ -461,7 +473,7 @@ def mod(button):
         else:
             said = press(state, button, now)
         save_state(state)
-    print(json.dumps({**view(state, now), **said}))
+    print(json.dumps({**view(state, now, worked=worked_so_far(now)), **said}))
 
 
 def show(kind):

@@ -43,6 +43,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // When the move / stand nudges are due, as bod.py would send it.
     next: null as { move?: number; stand?: number } | null,
     paused: false,
+    // Seconds worked today, as bod.py would count them; undefined leaves it out.
+    worked: undefined as number | undefined,
     // What the status line says, as the engine would draw it.
     status: undefined as string | undefined,
     // A nudge bod.py puts on show once the clock reaches `at`.
@@ -155,7 +157,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     return ok(
-      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, ...said })
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, ...said })
     )
   })
 
@@ -193,6 +195,23 @@ test('the status line says when Claude Bod is paused', async ($, on) => {
   await clock.advance(1_000)
 
   expect(world.status).toBe('⏸ Claude Bod is paused until your next prompt')
+})
+
+test("the status line leads with today's hours, and keeps them while a nudge is on show", async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000, stand: START + 1_200_000 }
+  world.worked = 2 * 3600 + 5 * 60 + 30
+  await $.session.start(SESSION)
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('⏱ 2h 05m today · 🤸 move in 3:01 · 🚶 stand in 19:59')
+
+  world.due = { at: START + 182_000, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
+  world.worked = 14 * 60
+  await clock.advance(182_000)
+
+  expect(world.status).toBe('⏱ 14m today')
 })
 
 test('an exercise: go starts a timer that counts up, done ends it', async ($, on) => {
