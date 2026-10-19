@@ -1,6 +1,6 @@
 /** The nudge on show, as `bod.py` prints it; times are epoch milliseconds. */
 export type Nudge = {
-  kind: 'move' | 'stand' | 'kind'
+  kind: 'move' | 'kind'
   text: string
   /** Seconds to count down from once started; null counts up instead. */
   seconds: number | null
@@ -13,8 +13,8 @@ export type View = {
   nudge: Nudge | null
   /** The "stop for the day" line, once today's hours are past the cap. */
   stop: string | null
-  /** When the exercise / standing nudges are next due; null while one is on show. */
-  next?: { move?: number; stand?: number } | null
+  /** When the exercise nudge is next due; null while a nudge is on show. */
+  next?: { move?: number } | null
   /** She's been away long enough that nothing shows until her next prompt. */
   paused?: boolean
   /** Seconds worked today, for the status line; null when they couldn't be counted. */

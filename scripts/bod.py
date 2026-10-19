@@ -2,10 +2,10 @@
 """Claude nudges Helena to move: get off the chair, do a quick exercise, stop
 for the day.
 
-Three nudges on three separate timers: a short exercise every 5, 10 or 15
-minutes of work (her pick, 5 by default), "go stand / walk" every STAND_MINUTES, and something kind to herself
-every KIND_MINUTES. Once today's hours pass DAILY_CAP_HOURS the standing one
-becomes "stop for the day" instead.
+Two nudges on two separate timers: a short exercise every 5, 10 or 15
+minutes of work (her pick, 5 by default), and something kind to herself
+every KIND_MINUTES. Every CAP_CHECK_MINUTES it checks today's hours, and once
+they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
 
 Entry points:
 
@@ -23,7 +23,7 @@ Entry points:
                   at the end of a countdown (one session plays it, not all).
   bod.py now      `/bod now`: the next exercise on show right away, the
                   other timers left as they are.
-  bod.py show move | plank | stand | kind
+  bod.py show move | plank | kind
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
   bod.py level easy | medium | hard
@@ -57,7 +57,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hours import GAP_MINUTES, timestamps  # noqa: E402
 
-STAND_MINUTES = 30
+# How often to add up today's hours (a scan of every transcript) for the cap.
+CAP_CHECK_MINUTES = 30
 KIND_MINUTES = 45
 BREAK_MINUTES = 20
 DAILY_CAP_HOURS = 4
@@ -79,7 +80,6 @@ EVERY_CHOICES = (5, 10, 15)
 CLAUDES_CHOICES = range(1, 21)
 DEFAULT_SETTINGS = {"level": "easy", "every": 5, "claudes": 5}
 
-POSTURE = "Hey, are you sitting not good? Go use your standing desk and walking treadmill."
 # (what to do, with {} for how many, how many on easy, whether it's seconds
 # to count down from rather than reps)
 EXERCISES = [
@@ -98,26 +98,30 @@ COMPASSION = [
 ]
 
 
-TIMES = ("last_prompt", "last_move", "last_stand", "last_kind")
+TIMES = ("last_prompt", "last_move", "last_cap", "last_kind")
 COUNTS = ("moves", "kinds")
 # Only set while the mod runs: its last tick, and the pause after a done.
 OPTIONAL_TIMES = ("mod_seen", "quiet_until")
-# The nudge on show is {"kind": move | stand | kind, "text", "seconds",
+# The nudge on show is {"kind": move | kind, "text", "seconds",
 # "beeped", and these times}. "started" is when she pressed go.
 PENDING_TIMES = ("started", "snoozed_until")
-LAST = {"move": "last_move", "stand": "last_stand", "kind": "last_kind"}
+LAST = {"move": "last_move", "kind": "last_kind"}
 
 
 def load_state():
     try:
         with open(STATE_PATH) as fh:
             raw = json.load(fh)
+        # last_cap was last_stand while there was a standing desk nudge.
+        raw.setdefault("last_cap", raw.get("last_stand"))
         state = {key: datetime.fromisoformat(raw[key]) for key in TIMES}
         for key in COUNTS:
             state[key] = int(raw.get(key, 0))
         for key in OPTIONAL_TIMES:
             state[key] = datetime.fromisoformat(raw[key]) if raw.get(key) else None
         pending = raw.get("pending")
+        if pending and pending.get("kind") not in LAST:
+            pending = None
         if pending:
             pending = dict(pending)
             for key in PENDING_TIMES:
@@ -202,10 +206,6 @@ def stop_nudge(worked):
     )
 
 
-def stand_nudge(worked):
-    return stop_nudge(worked) if over_cap(worked) else POSTURE
-
-
 def load_settings():
     try:
         with open(SETTINGS_PATH) as fh:
@@ -279,10 +279,11 @@ def prompted(state, now):
         nudges.append(f"Movement break: {text}. Go, I'll wait.")
         state["last_move"] = now
         state["moves"] += count
-    if due(state, "last_stand", STAND_MINUTES, now):
+    if due(state, "last_cap", CAP_CHECK_MINUTES, now):
         worked, _ = today(now)
-        nudges.append(stand_nudge(worked))
-        state["last_stand"] = now
+        if over_cap(worked):
+            nudges.append(stop_nudge(worked))
+        state["last_cap"] = now
     if due(state, "last_kind", KIND_MINUTES, now):
         nudges.append(kind_nudge(state["kinds"]))
         state["last_kind"] = now
@@ -329,17 +330,15 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
     if pending or (state["quiet_until"] and now < state["quiet_until"]):
         return
 
-    if due(state, "last_stand", STAND_MINUTES, now):
+    if due(state, "last_cap", CAP_CHECK_MINUTES, now):
         worked = worked_today(now)
         if over_cap(worked):
             # Not a nudge to finish: it stays up for the day, beside the others.
             state["stop"] = {"text": stop_nudge(worked), "date": now.date().isoformat()}
-            state["last_stand"] = now
+        state["last_cap"] = now
     if due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(state["moves"], settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
-    elif due(state, "last_stand", STAND_MINUTES, now):
-        pending = {"kind": "stand", "text": POSTURE, "seconds": None}
     elif due(state, "last_kind", KIND_MINUTES, now):
         pending = {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None}
     if pending:
@@ -402,10 +401,10 @@ def press(state, button, now):
 
 
 def upcoming(state, now, settings=None):
-    """When the exercise and standing nudges will next show, or None while one
-    is on show. Nothing new shows during the pause after a done, and a nudge
-    put off with "not now" comes back when its snooze ends, ahead of the rest,
-    so the other one can't show before then either."""
+    """When the exercise nudge will next show, or None while a nudge is on
+    show. Nothing new shows during the pause after a done, and a nudge put off
+    with "not now" comes back when its snooze ends, ahead of the rest, so the
+    exercise can't show before then either."""
     pending = state["pending"]
     earliest = state["quiet_until"] or now
     if pending:
@@ -416,7 +415,6 @@ def upcoming(state, now, settings=None):
     settings = settings or load_settings()
     return {
         "move": max(state["last_move"] + timedelta(minutes=settings["every"]), earliest),
-        "stand": max(state["last_stand"] + timedelta(minutes=STAND_MINUTES), earliest),
     }
 
 
@@ -483,7 +481,7 @@ def show(kind):
         if kind == "plank":
             kind = "move"
             state["moves"] = next(i for i, (_, _, timed) in enumerate(EXERCISES) if timed)
-        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, STAND_MINUTES, KIND_MINUTES))
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, KIND_MINUTES))
         advance(state, now, lambda now: timedelta(0))
         save_state(state)
     print(json.dumps(view(state, now)))
@@ -550,7 +548,6 @@ def status():
     state = load_state()
     if state:
         print(f"Last movement nudge: {fmt(now - state['last_move'])} ago")
-        print(f"Last standing desk nudge: {fmt(now - state['last_stand'])} ago")
         print(f"Last compassion nudge: {fmt(now - state['last_kind'])} ago")
 
     if over_cap(worked):

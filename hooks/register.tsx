@@ -3,7 +3,7 @@
 // on show in a state file every session shares; this module polls it, draws
 // what it says, and sends the button presses back.
 //
-// An exercise or standing-desk nudge takes the session over: a box in the
+// An exercise nudge takes the session over: a box in the
 // band above the prompt, full width, and no prompt is sent until it's done (or
 // put off with "not now"). Kindness nudges and the "stop for the day" line
 // show in the same band as a single line.
@@ -20,7 +20,7 @@ import type { Nudge, Reply, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
-const ICONS = { move: '🤸', stand: '🚶', kind: '💛' }
+const ICONS = { move: '🤸', kind: '💛' }
 // The box's frame, its heading, the blank rows and the button row around the lines.
 const CARD_CHROME_ROWS = 6
 
@@ -74,8 +74,8 @@ export const hours = (seconds: number) => {
 }
 
 // The status line: how long she's worked today, then how long until the next
-// exercise and standing nudge (left out while one is on show). Rounded up, so
-// 0:00 is the moment it's due.
+// exercise nudge (left out while one is on show). Rounded up, so 0:00
+// is the moment it's due.
 export const countdown = (shown: View | null, at: number) => {
   const worked = typeof shown?.worked === 'number' ? `⏱ ${hours(shown.worked)} today` : null
   const parts: string[] = []
@@ -83,15 +83,10 @@ export const countdown = (shown: View | null, at: number) => {
   if (shown?.paused) {
     parts.push('⏸ Claude Bod is paused until your next prompt')
   } else if (shown?.next) {
-    const { move, stand } = shown.next
-    const left = (due: number) => clock(Math.max(0, Math.ceil((due - at) / 1000)))
+    const { move } = shown.next
 
     if (move !== undefined) {
-      parts.push(`${ICONS.move} move in ${left(move)}`)
-    }
-
-    if (stand !== undefined) {
-      parts.push(`${ICONS.stand} stand in ${left(stand)}`)
+      parts.push(`${ICONS.move} move in ${clock(Math.max(0, Math.ceil((move - at) / 1000)))}`)
     }
   }
 
@@ -238,8 +233,7 @@ async function finish($: EngineInterface) {
 function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
-  const todo = nudge.kind === 'stand' ? [nudge.text] : steps(nudge)
-  const title = nudge.kind === 'stand' ? (isRunning ? 'Standing / walking' : 'Stand up') : 'Movement break'
+  const todo = steps(nudge)
 
   if (todo.length + CARD_CHROME_ROWS > rows) {
     return null
@@ -249,7 +243,7 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={1}>
       <Box gap={1} flexWrap="wrap">
         <Text bold color="claude">
-          {ICONS[nudge.kind]} {title}
+          {ICONS[nudge.kind]} Movement break
         </Text>
         <Text dimColor>· no prompts until this is done</Text>
       </Box>
@@ -280,7 +274,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     return (
       <Box key="nudge" gap={1} flexWrap="wrap">
         <Text bold>
-          {ICONS[nudge.kind]} {nudge.kind === 'stand' ? 'Standing / walking' : inLine(nudge)}
+          {ICONS[nudge.kind]} {inLine(nudge)}
         </Text>
         <Text color="success">⏱ {reading(nudge, at).text}</Text>
         <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
@@ -346,7 +340,7 @@ export const register: Register = on => {
     return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
   })
 
-  // The lock: while an exercise or standing-desk nudge is on show, nothing she
+  // The lock: while an exercise nudge is on show, nothing she
   // types is sent. A broken bod.py never locks her out: the nudge is taken
   // down and the prompt goes through, as it does when this hook fails.
   on('prompt.submit', async ($, e, next) => {

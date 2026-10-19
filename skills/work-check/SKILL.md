@@ -15,7 +15,7 @@ python3 "${CLAUDE_SKILL_DIR}/../../scripts/bod.py" status
 ```
 
 It prints the time worked today, the current stretch without a break, how long
-ago the last movement, standing desk and compassion nudges went out, and a `Verdict:` line. The hours are a
+ago the last movement and compassion nudges went out, and a `Verdict:` line. The hours are a
 transcript-based estimate across every project, session and worktree, so they include time Claude was busy on its own and miss anything
 done away from Claude. Treat them as rough.
 
@@ -39,8 +39,8 @@ later replies in the same session unless she asks again.
 
 ## Tuning
 
-The cap, the stretch limit and the three nudge intervals are constants at the
+The cap, the stretch limit and the two nudge intervals are constants at the
 top of `scripts/bod.py` in the Claude Bod plugin (bod). The same script is what
-sends a movement nudge every 5 minutes (her `/bod every` choice), a standing desk nudge every 30
-and a compassion nudge (a hug, a few slow breaths) every 45, and it switches the standing desk one to "stop for the day" once the cap
+sends a movement nudge every 5 minutes (her `/bod every` choice)
+and a compassion nudge (a hug, a few slow breaths) every 45, and it puts up a "stop for the day" line once the cap
 is passed.
