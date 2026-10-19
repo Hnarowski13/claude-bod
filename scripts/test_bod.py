@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -14,6 +15,15 @@ SETTINGS_DIR = tempfile.mkdtemp()
 os.environ["BOD_SETTINGS"] = os.path.join(SETTINGS_DIR, "settings.json")
 import bod  # noqa: E402
 
+
+def setUpModule():
+    # Nudges pick at random; these tests see the list in order instead.
+    patch = mock.patch.object(bod, "pick", lambda count: bod.EXERCISES[:count])
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+
+
+PICK = bod.pick  # the real one, before setUpModule swaps it
 NOW = datetime(2026, 10, 13, 10, 0).astimezone()
 NOT_OVER = lambda now: timedelta(hours=1)  # noqa: E731
 OVER = lambda now: timedelta(hours=5)  # noqa: E731
@@ -46,8 +56,9 @@ class Advance(unittest.TestCase):
 
     def test_the_plank_counts_down(self):
         state = working(move=11)
-        state["moves"] = 3
-        bod.advance(state, NOW, NOT_OVER)
+        plank = [e for e in bod.EXERCISES if "plank" in e[0]]
+        with mock.patch.object(bod, "pick", lambda count: plank):
+            bod.advance(state, NOW, NOT_OVER)
         self.assertEqual(state["pending"]["seconds"], 20)
 
     def test_one_nudge_at_a_time(self):
@@ -224,7 +235,7 @@ class RightNow(unittest.TestCase):
         # The other timers carry on as they were.
         self.assertEqual(state["last_kind"], NOW - minutes(10))
 
-    def test_done_restarts_the_exercise_timer_and_moves_the_rotation_on(self):
+    def test_done_restarts_the_exercise_timer_and_counts_the_exercise(self):
         state = working(move=1)
         bod.right_now(state, NOW, self.EASY)
         bod.press(state, "done", NOW + minutes(1))
@@ -298,21 +309,29 @@ class Levels(unittest.TestCase):
         self.assertIsNone(state["pending"])
 
     def test_easy_is_one_exercise(self):
-        self.assertEqual(bod.exercise(0, "easy"), ("5 push ups", None, 1))
+        self.assertEqual(bod.exercise("easy"), ("5 push ups", None, 1))
 
     def test_medium_is_two_exercises(self):
-        self.assertEqual(bod.exercise(0, "medium"), ("5 push ups, then 10 jumping jacks", None, 2))
+        self.assertEqual(bod.exercise("medium"), ("5 push ups, then 10 jumping jacks", None, 2))
 
     def test_hard_is_three_exercises_with_more_reps(self):
-        text, _, count = bod.exercise(2, "hard")
+        text, _, count = bod.exercise("hard", bod.EXERCISES[2:5])
         self.assertEqual(text, "15 squats, then a 30 second plank, then 15 calf raises")
         self.assertEqual(count, 3)
 
     def test_a_lone_plank_counts_down_and_a_set_counts_up(self):
-        self.assertEqual(bod.exercise(3, "easy")[1], 20)
-        self.assertEqual(bod.exercise(3, "hard")[1], None)
+        self.assertEqual(bod.exercise("easy", bod.EXERCISES[3:4])[1], 20)
+        self.assertEqual(bod.exercise("hard", bod.EXERCISES[3:6])[1], None)
 
-    def test_done_moves_the_rotation_past_the_whole_set(self):
+    def test_each_nudge_is_a_random_set_of_different_exercises(self):
+        with mock.patch.object(bod, "pick", PICK):
+            sets = [tuple(bod.pick(3)) for _ in range(50)]
+        for picked in sets:
+            self.assertEqual(len(set(picked)), 3)
+        # Not a fixed rotation: the same set doesn't keep coming back.
+        self.assertGreater(len(set(sets)), 10)
+
+    def test_done_counts_every_exercise_in_the_set(self):
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "claudes": 5})
         bod.press(state, "done", NOW)

@@ -51,6 +51,7 @@ import contextlib
 import fcntl
 import json
 import os
+import random
 import sys
 from datetime import datetime, timedelta
 
@@ -89,6 +90,12 @@ EXERCISES = [
     ("a {} second plank", 20, True),
     ("{} calf raises", 10, False),
     ("{} lunges each leg", 5, False),
+    ("{} high knees", 20, False),
+    ("a {} second wall sit", 20, True),
+    ("{} glute bridges", 10, False),
+    ("{} arm circles each way", 10, False),
+    ("{} toe touches", 10, False),
+    ("{} chair dips", 5, False),
 ]
 COMPASSION = [
     "give yourself a hug",
@@ -135,7 +142,7 @@ def load_state():
 
 
 def fresh_state(now, state=None):
-    """Every timer restarted, as after a break; the rotations carry on."""
+    """Every timer restarted, as after a break; the counts carry on."""
     fresh = {key: now for key in TIMES}
     for key in COUNTS:
         fresh[key] = state[key] if state else 0
@@ -225,20 +232,26 @@ def save_settings(settings):
     os.replace(tmp, SETTINGS_PATH)
 
 
-def exercise(moves, level="easy"):
-    """(text, seconds to count down from or None, how many exercises): the
-    next ones in the rotation, as many as the level asks for. Only a lone
+def pick(count):
+    """`count` different exercises, at random, so sets don't keep coming up together."""
+    return random.sample(EXERCISES, count)
+
+
+def exercise(level="easy", picked=None):
+    """(text, seconds to count down from or None, how many exercises): as
+    many random ones as the level asks for, or the `picked` ones. Only a lone
     timed exercise counts down; a set of them counts up."""
     count, scale = LEVELS[level]
-    picked = [EXERCISES[(moves + i) % len(EXERCISES)] for i in range(count)]
+    picked = picked or pick(count)
+    count = len(picked)
     amounts = [int(amount * scale + 0.5) for _, amount, _ in picked]
     text = ", then ".join(what.format(n) for (what, _, _), n in zip(picked, amounts))
     seconds = amounts[0] if count == 1 and picked[0][2] else None
     return text, seconds, count
 
 
-def move_nudge(moves, level="easy"):
-    return f"Movement break: {exercise(moves, level)[0]}. Go, I'll wait."
+def move_nudge(level="easy"):
+    return f"Movement break: {exercise(level)[0]}. Go, I'll wait."
 
 
 def compassion(kinds):
@@ -275,7 +288,7 @@ def prompted(state, now):
     settings = load_settings()
     nudges = []
     if due(state, "last_move", settings["every"], now):
-        text, _, count = exercise(state["moves"], settings["level"])
+        text, _, count = exercise(settings["level"])
         nudges.append(f"Movement break: {text}. Go, I'll wait.")
         state["last_move"] = now
         state["moves"] += count
@@ -337,7 +350,7 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
             state["stop"] = {"text": stop_nudge(worked), "date": now.date().isoformat()}
         state["last_cap"] = now
     if due(state, "last_move", settings["every"], now):
-        text, seconds, count = exercise(state["moves"], settings["level"])
+        text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
     elif due(state, "last_kind", KIND_MINUTES, now):
         pending = {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None}
@@ -357,7 +370,7 @@ def right_now(state, now, settings=None):
         pending["snoozed_until"] = None
         return
     settings = settings or load_settings()
-    text, seconds, count = exercise(state["moves"], settings["level"])
+    text, seconds, count = exercise(settings["level"])
     state["pending"] = {
         "kind": "move", "text": text, "seconds": seconds, "count": count,
         "started": None, "snoozed_until": None, "beeped": False,
@@ -380,7 +393,7 @@ def press(state, button, now):
     elif button == "done":
         state[LAST[pending["kind"]]] = now
         if pending["kind"] == "move":
-            # The rotation moves past every exercise in the set.
+            # How many exercises she's done, the whole set counted.
             state["moves"] += pending.get("count", 1)
         elif pending["kind"] == "kind":
             state["kinds"] += 1
@@ -478,11 +491,14 @@ def show(kind):
     now = datetime.now().astimezone()
     with locked():
         state = fresh_state(now, load_state())
-        if kind == "plank":
-            kind = "move"
-            state["moves"] = next(i for i, (_, _, timed) in enumerate(EXERCISES) if timed)
+        plank = kind == "plank"
+        kind = "move" if plank else kind
         state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, KIND_MINUTES))
         advance(state, now, lambda now: timedelta(0))
+        if plank:
+            # A lone plank, to see the countdown.
+            text, seconds, count = exercise("easy", [next(e for e in EXERCISES if "plank" in e[0])])
+            state["pending"].update(text=text, seconds=seconds, count=count)
         save_state(state)
     print(json.dumps(view(state, now)))
 
