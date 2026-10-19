@@ -4,7 +4,7 @@ for the day.
 
 Two nudges on two separate timers: a short exercise every 5, 10 or 15
 minutes of work (her pick, 5 by default), and something kind to herself
-every KIND_MINUTES. Every CAP_CHECK_MINUTES it checks today's hours, and once
+every 10, 15, 30 or 45 (her pick too, 15 by default). Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
 
 Entry points:
@@ -60,7 +60,6 @@ from hours import GAP_MINUTES, timestamps  # noqa: E402
 
 # How often to add up today's hours (a scan of every transcript) for the cap.
 CAP_CHECK_MINUTES = 30
-KIND_MINUTES = 45
 BREAK_MINUTES = 20
 DAILY_CAP_HOURS = 4
 STRETCH_LIMIT_MINUTES = 90
@@ -77,9 +76,10 @@ SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/
 # level: (exercises per nudge, how much the reps and seconds grow)
 LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
+KIND_CHOICES = (10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
 CLAUDES_CHOICES = range(1, 21)
-DEFAULT_SETTINGS = {"level": "easy", "every": 5, "claudes": 5}
+DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5}
 
 # (what to do, with {} for how many, how many on easy, whether it's seconds
 # to count down from rather than reps)
@@ -102,6 +102,14 @@ COMPASSION = [
     "take three slow breaths",
     "drop your shoulders and unclench your jaw",
     "say one kind thing to yourself",
+    "notice one thing you did well today",
+    "sip some water",
+    "look out a window for a few seconds",
+    "talk to yourself the way you'd talk to a friend",
+    "put a hand on your heart and breathe",
+    "forgive yourself one mistake from today",
+    "stretch your arms up and smile",
+    "remember you don't have to finish everything today",
 ]
 
 
@@ -221,8 +229,9 @@ def load_settings():
         raw = {}
     level = raw.get("level") if raw.get("level") in LEVELS else DEFAULT_SETTINGS["level"]
     every = raw.get("every") if raw.get("every") in EVERY_CHOICES else DEFAULT_SETTINGS["every"]
+    kind = raw.get("kind") if raw.get("kind") in KIND_CHOICES else DEFAULT_SETTINGS["kind"]
     claudes = raw.get("claudes") if raw.get("claudes") in CLAUDES_CHOICES else DEFAULT_SETTINGS["claudes"]
-    return {"level": level, "every": every, "claudes": claudes}
+    return {"level": level, "every": every, "kind": kind, "claudes": claudes}
 
 
 def save_settings(settings):
@@ -297,7 +306,7 @@ def prompted(state, now):
         if over_cap(worked):
             nudges.append(stop_nudge(worked))
         state["last_cap"] = now
-    if due(state, "last_kind", KIND_MINUTES, now):
+    if due(state, "last_kind", settings["kind"], now):
         nudges.append(kind_nudge(state["kinds"]))
         state["last_kind"] = now
         state["kinds"] += 1
@@ -352,7 +361,7 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
     if due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
-    elif due(state, "last_kind", KIND_MINUTES, now):
+    elif due(state, "last_kind", settings["kind"], now):
         pending = {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None}
     if pending:
         state["pending"] = {**pending, "started": None, "snoozed_until": None, "beeped": False}
@@ -493,7 +502,7 @@ def show(kind):
         state = fresh_state(now, load_state())
         plank = kind == "plank"
         kind = "move" if plank else kind
-        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, KIND_MINUTES))
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES))
         advance(state, now, lambda now: timedelta(0))
         if plank:
             # A lone plank, to see the countdown.
@@ -507,30 +516,33 @@ def describe(settings):
     count, _ = LEVELS[settings["level"]]
     what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
     return (f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes, "
-            f"at most {settings['claudes']} Claudes open at once.")
+            f"something kind every {settings['kind']}, at most {settings['claudes']} Claudes open at once.")
 
 
 def choose(args):
-    """Set the level, the minutes and/or the Claude cap, given as pairs
-    ("level hard every 10 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
+    """Set the level, the minutes, the kindness minutes and/or the Claude cap, given as pairs
+    ("level hard every 10 kind 30 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
     args = [part for i, arg in enumerate(args)
-            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "claudes")) else [arg])]
+            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes")) else [arg])]
     if not args or len(args) % 2:
         args = [*args, ""]
     for key, value in zip(args[::2], args[1::2]):
         if key == "every":
             value = int(value) if value.isdigit() else None
             choices = EVERY_CHOICES
+        elif key == "kind":
+            value = int(value) if value.isdigit() else None
+            choices = KIND_CHOICES
         elif key == "claudes":
             value = int(value) if value.isdigit() else None
             choices = CLAUDES_CHOICES
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15, claudes 1-20.")
+            print("Use: level easy|medium|hard, every 5|10|15, kind 10|15|30|45, claudes 1-20.")
             sys.exit(1)
         if value not in choices:
             print(f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -549,6 +561,8 @@ def confirm(key, settings):
         return f"Your level is now {settings['level']}: {what} per nudge."
     if key == "every":
         return f"Your exercises are now every {settings['every']} minutes."
+    if key == "kind":
+        return f"Something kind is now every {settings['kind']} minutes."
     return f"Your Claude cap is now {settings['claudes']}."
 
 
@@ -585,7 +599,7 @@ if __name__ == "__main__":
             pass
     elif mode in ("tick", "now", "go", "done", "snooze", "beep"):
         mod(mode)
-    elif mode in ("level", "every", "claudes"):
+    elif mode in ("level", "every", "kind", "claudes"):
         choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))

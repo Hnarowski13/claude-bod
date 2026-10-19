@@ -170,7 +170,7 @@ class Press(unittest.TestCase):
 
 
 class Upcoming(unittest.TestCase):
-    EVERY_5 = {"level": "easy", "every": 5}
+    EVERY_5 = {"level": "easy", "every": 5, "kind": 15}
 
     def next_in(self, state, now=NOW):
         """{kind: seconds until it's due} from what the mod is sent."""
@@ -225,7 +225,7 @@ class Upcoming(unittest.TestCase):
 
 
 class RightNow(unittest.TestCase):
-    EASY = {"level": "easy", "every": 5}
+    EASY = {"level": "easy", "every": 5, "kind": 15}
 
     def test_the_next_exercise_goes_up_without_waiting(self):
         state = working(move=1, kind=10)
@@ -303,10 +303,17 @@ class Levels(unittest.TestCase):
         self.assertEqual(state["pending"]["kind"], "move")
 
     def test_every_ten_waits_ten_minutes(self):
-        settings = {"level": "easy", "every": 10}
+        settings = {"level": "easy", "every": 10, "kind": 15}
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, settings)
         self.assertIsNone(state["pending"])
+
+    def test_kindness_comes_on_its_own_chosen_interval(self):
+        state = working(kind=16)
+        bod.advance(state, NOW, NOT_OVER, {"level": "easy", "every": 5, "kind": 30})
+        self.assertIsNone(state["pending"])
+        bod.advance(state, NOW, NOT_OVER, {"level": "easy", "every": 5, "kind": 15})
+        self.assertEqual(state["pending"]["kind"], "kind")
 
     def test_easy_is_one_exercise(self):
         self.assertEqual(bod.exercise("easy"), ("5 push ups", None, 1))
@@ -333,14 +340,14 @@ class Levels(unittest.TestCase):
 
     def test_done_counts_every_exercise_in_the_set(self):
         state = working(move=6)
-        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "claudes": 5})
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "kind": 15, "claudes": 5})
         bod.press(state, "done", NOW)
         self.assertEqual(state["moves"], 3)
 
     def test_a_bad_settings_file_falls_back_to_the_defaults(self):
         with open(bod.SETTINGS_PATH, "w") as fh:
-            fh.write('{"level": "extreme", "every": 7}')
-        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "claudes": 5})
+            fh.write('{"level": "extreme", "every": 7, "kind": 15}')
+        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "kind": 15, "claudes": 5})
 
 
 class CommandLine(unittest.TestCase):
@@ -388,21 +395,25 @@ class CommandLine(unittest.TestCase):
         )
         self.assertEqual(run("level", "hard").stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge.")
         self.assertEqual(run("every", "15").stdout.strip(), "Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "claudes": 5})
-        self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, at most 5 Claudes open at once.")
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5})
+        self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, something kind every 15, at most 5 Claudes open at once.")
         both = run("level", "medium", "every", "10")
         self.assertEqual(both.stdout.strip(), "Your level is now medium: 2 exercises per nudge. Your exercises are now every 10 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5})
         short = run("level", "hard", "15")
         self.assertEqual(short.stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge. Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5})
         run("level", "medium", "every", "10")
         half_bad = run("level", "easy", "every", "7")
         self.assertEqual(half_bad.returncode, 1)
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5})
         bad = run("every", "7")
         self.assertEqual(bad.returncode, 1)
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15.")
+        self.assertEqual(run("kind", "30").stdout.strip(), "Something kind is now every 30 minutes.")
+        self.assertEqual(bod.load_settings()["kind"], 30)
+        self.assertEqual(run("kind", "20").stdout.strip(), "Pick one of: 10, 15, 30, 45.")
+        self.assertEqual(bod.load_settings()["kind"], 30)
         self.assertEqual(run("claudes", "3").stdout.strip(), "Your Claude cap is now 3.")
         self.assertEqual(bod.load_settings()["claudes"], 3)
         too_many = run("claudes", "50")
