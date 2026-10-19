@@ -17,6 +17,8 @@ export type View = {
   next?: { move?: number; stand?: number } | null
   /** She's been away long enough that nothing shows until her next prompt. */
   paused?: boolean
+  /** Seconds worked today, for the status line; null when they couldn't be counted. */
+  worked?: number | null
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */
