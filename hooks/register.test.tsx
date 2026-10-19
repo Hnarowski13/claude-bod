@@ -120,7 +120,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod is on easy.\n')
     }
 
-    if (command === 'level' || command === 'every' || command === 'claudes') {
+    if (command === 'level' || command === 'every' || command === 'kind' || command === 'claudes') {
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
