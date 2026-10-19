@@ -10,7 +10,7 @@
 // show in the same band as a single line.
 //
 // The status line under the prompt keeps a running total of today's hours,
-// beside the countdowns to the next nudges.
+// beside the countdowns to the next nudges and how many she's skipped today.
 //
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
@@ -57,6 +57,17 @@ export const headline = (nudge: Nudge) => {
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
 }
 
+// Said on a nudge that comes back after "not now": once already, twice, 3 times.
+export const skippedNote = (nudge: Nudge) => {
+  const skipped = nudge.skipped ?? 0
+
+  if (skipped === 0) {
+    return null
+  }
+
+  return `you skipped ${skipped === 1 ? 'once' : skipped === 2 ? 'twice' : `${skipped} times`} already`
+}
+
 // The nudges that take the session over until they're done.
 export const locks = (nudge: Nudge | null | undefined): nudge is Nudge =>
   nudge !== null && nudge !== undefined && nudge.kind !== 'kind'
@@ -82,8 +93,8 @@ export const hours = (seconds: number) => {
 }
 
 // The status line: how long she's worked today, then how long until the next
-// exercise nudge (left out while one is on show). Rounded up, so 0:00
-// is the moment it's due.
+// exercise nudge (left out while one is on show), then how many nudges she's
+// put off with "not now" today. Rounded up, so 0:00 is the moment it's due.
 export const countdown = (shown: View | null, at: number) => {
   const worked = typeof shown?.worked === 'number' ? `⏱ ${hours(shown.worked)} today` : null
   const parts: string[] = []
@@ -96,6 +107,10 @@ export const countdown = (shown: View | null, at: number) => {
     if (move !== undefined) {
       parts.push(`${ICONS.move} move in ${clock(Math.max(0, Math.ceil((move - at) / 1000)))}`)
     }
+  }
+
+  if (shown?.skips) {
+    parts.push(`🙈 ${shown.skips} skipped today`)
   }
 
   const line = [worked, ...parts].filter(part => part !== null)
@@ -125,11 +140,11 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
       return null
     }
 
-    const { nudge, stop, next = null, paused = false, worked = null, ...rest } = JSON.parse(stdout) as Reply
+    const { nudge, stop, next = null, paused = false, worked = null, skips = 0, ...rest } = JSON.parse(stdout) as Reply
 
-    await show($, { nudge, stop, next, paused, worked }, rest.now)
+    await show($, { nudge, stop, next, paused, worked, skips }, rest.now)
 
-    return { nudge, stop, next, paused, worked, ...rest }
+    return { nudge, stop, next, paused, worked, skips, ...rest }
   } catch {
     return null
   }
@@ -244,6 +259,7 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
   const timer = reading(nudge, at)
   const isCheck = nudge.kind === 'check'
   const todo = isCheck ? [CHECK_IN_QUESTION, `Try this: ${nudge.text}`] : steps(nudge)
+  const note = skippedNote(nudge)
 
   if (todo.length + CARD_CHROME_ROWS > rows) {
     return null
@@ -256,6 +272,7 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
           {ICONS[nudge.kind]} {isCheck ? TITLES.check : TITLES.move}
         </Text>
         <Text dimColor>· no prompts until this is done</Text>
+        {note !== null ? <Text color="warning">· {note}</Text> : null}
       </Box>
       <Box flexDirection="column" paddingX={2}>
         {todo.map((step, index) => (
@@ -285,6 +302,8 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
 // The one-line nudge: every kindness nudge, and the others where the card
 // has no room.
 function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press) {
+  const note = skippedNote(nudge)
+
   if (nudge.started !== null) {
     return (
       <Box key="nudge" gap={1} flexWrap="wrap">
@@ -302,6 +321,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
       <Text bold>
         {ICONS[nudge.kind]} {headline(nudge)}
       </Text>
+      {note !== null ? <Text color="warning">({note})</Text> : null}
       {nudge.kind !== 'move' ? (
         <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
       ) : (

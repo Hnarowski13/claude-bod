@@ -164,6 +164,8 @@ def load_state():
         state["pending"] = pending or None
         # {"text", "date"}: the "stop for the day" line, and the day it is for.
         state["stop"] = raw.get("stop") or None
+        # {"count", "date"}: how many times she's said "not now" today.
+        state["skips"] = raw.get("skips") or None
         return state
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -178,6 +180,7 @@ def fresh_state(now, state=None):
     fresh["quiet_until"] = None
     fresh["pending"] = None
     fresh["stop"] = state["stop"] if state else None
+    fresh["skips"] = state["skips"] if state else None
     return fresh
 
 
@@ -193,6 +196,7 @@ def save_state(state):
         pending = {**pending, **{key: iso(pending[key]) for key in PENDING_TIMES}}
     raw["pending"] = pending
     raw["stop"] = state["stop"]
+    raw["skips"] = state["skips"]
     tmp = STATE_PATH + ".tmp"
     with open(tmp, "w") as fh:
         json.dump(raw, fh)
@@ -297,6 +301,11 @@ def fog_fix(checks):
 
 def check_nudge(checks):
     return f"Workflow check-in: {CHECK_IN_QUESTION} Try this: {fog_fix(checks)}."
+
+
+def skips_today(state, now):
+    skips = state["skips"]
+    return skips["count"] if skips and skips["date"] == now.date().isoformat() else 0
 
 
 def away(state, now):
@@ -441,6 +450,9 @@ def press(state, button, now):
         pending["snoozed_until"] = now + timedelta(minutes=SNOOZE_MINUTES)
         pending["started"] = None
         pending["beeped"] = False
+        # This nudge says so when it comes back; the status line keeps the day's total.
+        pending["skipped"] = pending.get("skipped", 0) + 1
+        state["skips"] = {"count": skips_today(state, now) + 1, "date": now.date().isoformat()}
     elif button == "done":
         state[LAST[pending["kind"]]] = now
         if pending["kind"] == "move":
@@ -488,7 +500,8 @@ def view(state, now, settings=None, worked=None):
     """What the band shows, with times in epoch milliseconds for the mod.
     "next" is when each nudge is due; "paused" means she's been away long
     enough that nothing shows until her next prompt restarts the timers;
-    "worked" is how many seconds she's worked today, when it was counted."""
+    "worked" is how many seconds she's worked today, when it was counted;
+    "skips" is how many times she's said "not now" today."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
@@ -504,6 +517,7 @@ def view(state, now, settings=None, worked=None):
             "text": nudge["text"],
             "seconds": nudge["seconds"],
             "started": ms(nudge["started"]) if nudge["started"] else None,
+            "skipped": nudge.get("skipped", 0),
         }
     return {
         "now": ms(now),
@@ -512,6 +526,7 @@ def view(state, now, settings=None, worked=None):
         "next": {kind: ms(when) for kind, when in due_at.items()} if due_at else None,
         "paused": paused,
         "worked": int(worked.total_seconds()) if worked is not None else None,
+        "skips": skips_today(state, now),
     }
 
 

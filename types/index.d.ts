@@ -6,6 +6,8 @@ export type Nudge = {
   seconds: number | null
   /** When go was pressed; null until then. */
   started: number | null
+  /** How many times this nudge was put off with "not now". */
+  skipped?: number
 }
 
 /** What the band draws from. */
@@ -19,6 +21,8 @@ export type View = {
   paused?: boolean
   /** Seconds worked today, for the status line; null when they couldn't be counted. */
   worked?: number | null
+  /** How many times she's said "not now" today, for the status line. */
+  skips?: number
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */
