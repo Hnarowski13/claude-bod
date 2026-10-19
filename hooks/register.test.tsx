@@ -40,8 +40,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     refilled: [] as string[],
     // The lines the mod added to the chat.
     logs: [] as string[],
-    // When the move / stand nudges are due, as bod.py would send it.
-    next: null as { move?: number; stand?: number } | null,
+    // When the move nudge is due, as bod.py would send it.
+    next: null as { move?: number } | null,
     paused: false,
     // Seconds worked today, as bod.py would count them; undefined leaves it out.
     worked: undefined as number | undefined,
@@ -167,16 +167,16 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 test('the status line counts down to the next nudge, and it shows the second it is due', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.next = { move: START + 182_000, stand: START + 1_200_000 }
+  world.next = { move: START + 182_000 }
   await $.session.start(SESSION)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await clock.advance(1_000)
 
-  expect(world.status).toBe('🤸 move in 3:01 · 🚶 stand in 19:59')
+  expect(world.status).toBe('🤸 move in 3:01')
 
   await clock.advance(60_000)
 
-  expect(world.status).toBe('🤸 move in 2:01 · 🚶 stand in 18:59')
+  expect(world.status).toBe('🤸 move in 2:01')
 
   // Due at 3:02. The 5 second poll last ran at 3:00 and next runs at 3:05;
   // the mod asks bod.py itself the second the countdown ends.
@@ -200,12 +200,12 @@ test('the status line says when Claude Bod is paused', async ($, on) => {
 test("the status line leads with today's hours, and keeps them while a nudge is on show", async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.next = { move: START + 182_000, stand: START + 1_200_000 }
+  world.next = { move: START + 182_000 }
   world.worked = 2 * 3600 + 5 * 60 + 30
   await $.session.start(SESSION)
   await clock.advance(1_000)
 
-  expect(world.status).toBe('⏱ 2h 05m today · 🤸 move in 3:01 · 🚶 stand in 19:59')
+  expect(world.status).toBe('⏱ 2h 05m today · 🤸 move in 3:01')
 
   world.due = { at: START + 182_000, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
   world.worked = 14 * 60
@@ -288,10 +288,10 @@ test('a nudge another session raised shows up on the next poll', async ($, on) =
 
   expect(await ui.find({ key: 'go' })).toBeUndefined()
 
-  world.nudge = { kind: 'stand', text: 'Go use your standing desk.', seconds: null, started: null }
+  world.nudge = { kind: 'move', text: '10 calf raises', seconds: null, started: null }
   await clock.advance(5_000)
 
-  expect(await ui.find({ text: /standing desk/ })).toBeDefined()
+  expect(await ui.find({ text: /calf raises/ })).toBeDefined()
   expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
@@ -316,17 +316,6 @@ test('an exercise set takes over the band in a box, one exercise per line, never
 
   expect(world.toasts).toEqual(['Nice, 0:07 💪'])
   expect(await ui.find({ text: /squats/ })).toBeUndefined()
-})
-
-test('a standing nudge gets the box too', async ($, on) => {
-  const clock = mock.clock(on, { now: START })
-  fakeBod(on, clock, { kind: 'stand', text: 'Go use your standing desk.', seconds: null })
-  await $.session.start(SESSION)
-  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 20 }, surface: 'terminal' })
-
-  expect(await ui.find({ text: /Stand up/ })).toBeDefined()
-  expect(await ui.find({ text: 'Go use your standing desk.' })).toBeDefined()
-  expect(await ui.find({ key: 'snooze' })).toBeDefined()
 })
 
 test('where the band is too short for the box, the nudge is one line', async ($, on) => {

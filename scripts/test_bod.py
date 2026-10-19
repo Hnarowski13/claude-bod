@@ -51,7 +51,7 @@ class Advance(unittest.TestCase):
         self.assertEqual(state["pending"]["seconds"], 20)
 
     def test_one_nudge_at_a_time(self):
-        state = working(move=50, stand=50, kind=50)
+        state = working(move=50, cap=50, kind=50)
         bod.advance(state, NOW, NOT_OVER)
         self.assertEqual(state["pending"]["kind"], "move")
         bod.advance(state, NOW, NOT_OVER)
@@ -68,8 +68,15 @@ class Advance(unittest.TestCase):
         bod.advance(state, NOW + minutes(bod.BREAK_MINUTES), NOT_OVER)
         self.assertIsNone(state["pending"])
 
-    def test_over_the_cap_the_stand_nudge_becomes_a_stop_line_for_the_day(self):
-        state = working(stand=31)
+    def test_there_is_no_standing_desk_nudge_any_more(self):
+        state = working(cap=31)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertIsNone(state["pending"])
+        self.assertIsNone(state["stop"])
+        self.assertEqual(state["last_cap"], NOW)
+
+    def test_over_the_cap_a_stop_line_stays_up_for_the_day(self):
+        state = working(cap=31)
         bod.advance(state, NOW, OVER)
         self.assertIsNone(state["pending"])
         self.assertIn("Stop for the day", state["stop"]["text"])
@@ -78,6 +85,27 @@ class Advance(unittest.TestCase):
         state["last_prompt"] = NOW + timedelta(days=1)
         bod.advance(state, NOW + timedelta(days=1), NOT_OVER)
         self.assertIsNone(state["stop"])
+
+
+class OldState(unittest.TestCase):
+    def test_a_state_file_from_when_there_was_a_standing_nudge_still_loads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "state.json")
+            when = (NOW - minutes(10)).isoformat()
+            with open(path, "w") as fh:
+                json.dump({
+                    "last_prompt": when, "last_move": when, "last_stand": when, "last_kind": when,
+                    "moves": 3, "kinds": 1,
+                    "pending": {"kind": "stand", "text": "x", "seconds": None, "started": None, "snoozed_until": None},
+                }, fh)
+            old, bod.STATE_PATH = bod.STATE_PATH, path
+            try:
+                state = bod.load_state()
+            finally:
+                bod.STATE_PATH = old
+        self.assertEqual(state["last_cap"], NOW - minutes(10))
+        self.assertEqual(state["moves"], 3)
+        self.assertIsNone(state["pending"])
 
 
 class Press(unittest.TestCase):
@@ -98,12 +126,12 @@ class Press(unittest.TestCase):
         self.assertEqual(state["last_move"], NOW + timedelta(seconds=41))
 
     def test_after_done_the_band_stays_empty_for_a_minute(self):
-        state = self.shown(move=11, stand=31)
+        state = self.shown(move=11, kind=46)
         bod.press(state, "done", NOW)
         bod.advance(state, NOW + timedelta(seconds=30), NOT_OVER)
         self.assertIsNone(state["pending"])
         bod.advance(state, NOW + timedelta(seconds=61), NOT_OVER)
-        self.assertEqual(state["pending"]["kind"], "stand")
+        self.assertEqual(state["pending"]["kind"], "kind")
 
     def test_done_on_a_kindness_nudge_has_no_time_to_report(self):
         state = self.shown(kind=46)
@@ -140,9 +168,9 @@ class Upcoming(unittest.TestCase):
             return None
         return {kind: (ms - int(now.timestamp() * 1000)) // 1000 for kind, ms in shown["next"].items()}
 
-    def test_counts_down_to_the_exercise_and_the_standing_desk(self):
-        state = working(move=2, stand=10)
-        self.assertEqual(self.next_in(state), {"move": 180, "stand": 1200})
+    def test_counts_down_to_the_exercise(self):
+        state = working(move=2)
+        self.assertEqual(self.next_in(state), {"move": 180})
 
     def test_hits_zero_the_moment_the_nudge_goes_on_show(self):
         state = working(move=2)
@@ -160,23 +188,23 @@ class Upcoming(unittest.TestCase):
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "snooze", NOW)
-        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60, "stand": 1800})
+        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
 
-    def test_not_now_on_standing_keeps_the_exercise_countdown(self):
-        state = working(move=2, stand=31)
+    def test_not_now_on_kindness_keeps_the_exercise_countdown(self):
+        state = working(move=2, kind=46)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
-        self.assertEqual(state["pending"]["kind"], "stand")
+        self.assertEqual(state["pending"]["kind"], "kind")
         bod.press(state, "snooze", NOW)
-        # The exercise waits for the standing nudge to come back and be done.
-        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60, "stand": bod.SNOOZE_MINUTES * 60})
+        # The exercise waits for the kindness nudge to come back and be done.
+        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
         later = NOW + minutes(4)
-        self.assertEqual(self.next_in(state, later), {"move": 60, "stand": 60})
+        self.assertEqual(self.next_in(state, later), {"move": 60})
 
     def test_after_done_nothing_is_due_before_the_quiet_minute_ends(self):
-        state = working(move=6, stand=40)
+        state = working(move=4.5, kind=46)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "done", NOW)
-        self.assertEqual(self.next_in(state), {"move": 300, "stand": bod.QUIET_SECONDS})
+        self.assertEqual(self.next_in(state), {"move": bod.QUIET_SECONDS})
 
     def test_away_long_enough_it_says_paused_instead(self):
         state = working(move=2, prompt=bod.BREAK_MINUTES)
@@ -189,12 +217,12 @@ class RightNow(unittest.TestCase):
     EASY = {"level": "easy", "every": 5}
 
     def test_the_next_exercise_goes_up_without_waiting(self):
-        state = working(move=1, stand=10)
+        state = working(move=1, kind=10)
         bod.right_now(state, NOW, self.EASY)
         self.assertEqual(state["pending"]["kind"], "move")
         self.assertEqual(state["pending"]["text"], "5 push ups")
         # The other timers carry on as they were.
-        self.assertEqual(state["last_stand"], NOW - minutes(10))
+        self.assertEqual(state["last_kind"], NOW - minutes(10))
 
     def test_done_restarts_the_exercise_timer_and_moves_the_rotation_on(self):
         state = working(move=1)
@@ -204,10 +232,10 @@ class RightNow(unittest.TestCase):
         self.assertEqual(state["moves"], 1)
 
     def test_a_nudge_already_up_stays(self):
-        state = working(stand=31)
+        state = working(kind=46)
         bod.advance(state, NOW, NOT_OVER, self.EASY)
         bod.right_now(state, NOW, self.EASY)
-        self.assertEqual(state["pending"]["kind"], "stand")
+        self.assertEqual(state["pending"]["kind"], "kind")
 
     def test_a_nudge_put_off_comes_straight_back(self):
         state = working(move=6)
@@ -226,7 +254,7 @@ class RightNow(unittest.TestCase):
 
 class Prompted(unittest.TestCase):
     def test_with_the_mod_running_claude_is_handed_nothing(self):
-        state = working(move=50, stand=50, kind=50, prompt=1)
+        state = working(move=50, cap=50, kind=50, prompt=1)
         state["mod_seen"] = NOW - timedelta(seconds=5)
         state, nudges = bod.prompted(state, NOW)
         self.assertEqual(nudges, [])
