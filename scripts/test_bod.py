@@ -262,6 +262,15 @@ class RightNow(unittest.TestCase):
         bod.advance(state, NOW, NOT_OVER, self.EASY)
         self.assertEqual(bod.view(state, NOW, self.EASY)["nudge"]["kind"], "move")
 
+    def test_kind_now_puts_a_kindness_nudge_up_and_leaves_the_exercise_timer(self):
+        state = working(move=1, kind=1)
+        bod.right_now(state, NOW, self.EASY, kind="kind")
+        self.assertEqual(state["pending"]["kind"], "kind")
+        self.assertEqual(state["last_move"], NOW - minutes(1))
+        bod.press(state, "done", NOW + minutes(1))
+        self.assertEqual(state["last_kind"], NOW + minutes(1))
+        self.assertEqual(state["kinds"], 1)
+
 
 class Prompted(unittest.TestCase):
     def test_with_the_mod_running_claude_is_handed_nothing(self):
@@ -413,7 +422,7 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15.")
         self.assertEqual(run("kind", "30").stdout.strip(), "Something kind is now every 30 minutes.")
         self.assertEqual(bod.load_settings()["kind"], 30)
-        self.assertEqual(run("kind", "20").stdout.strip(), "Pick one of: 10, 15, 30, 45.")
+        self.assertEqual(run("kind", "20").stdout.strip(), "Pick one of: 5, 10, 15, 30, 45.")
         self.assertEqual(bod.load_settings()["kind"], 30)
         self.assertEqual(run("claudes", "3").stdout.strip(), "Your Claude cap is now 3.")
         self.assertEqual(bod.load_settings()["claudes"], 3)

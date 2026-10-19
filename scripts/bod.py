@@ -4,7 +4,7 @@ for the day.
 
 Two nudges on two separate timers: a short exercise every 5, 10 or 15
 minutes of work (her pick, 5 by default), and something kind to herself
-every 10, 15, 30 or 45 (her pick too, 15 by default). Every CHECK_IN_MINUTES a
+every 5, 10, 15, 30 or 45 (her pick too, 15 by default). Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
 (too many Claudes, lost track of what each one is doing). Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
@@ -25,6 +25,8 @@ Entry points:
                   at the end of a countdown (one session plays it, not all).
   bod.py now      `/bod now`: the next exercise on show right away, the
                   other timers left as they are.
+  bod.py kindnow  `/bod kind now`: a kindness nudge on show right away,
+                  the same way.
   bod.py show move | plank | kind | check
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
@@ -80,7 +82,7 @@ SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/
 # level: (exercises per nudge, how much the reps and seconds grow)
 LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
-KIND_CHOICES = (10, 15, 30, 45)
+KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
 CLAUDES_CHOICES = range(1, 21)
 DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5}
@@ -400,9 +402,10 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
         state["pending"] = {**pending, "started": None, "snoozed_until": None, "beeped": False}
 
 
-def right_now(state, now, settings=None):
+def right_now(state, now, settings=None, kind="move"):
     """`/bod now`: the next exercise on show at once, without waiting for its
-    timer or touching the others. A nudge already up stays; one put off with
+    timer or touching the others; `/bod kind now` (kind="kind") does the same
+    with a kindness nudge. A nudge already up stays; one put off with
     "not now" comes straight back."""
     pending = state["pending"]
     # Asking counts as being here: a tick won't drop it as stale.
@@ -410,6 +413,12 @@ def right_now(state, now, settings=None):
     state["quiet_until"] = None
     if pending:
         pending["snoozed_until"] = None
+        return
+    if kind == "kind":
+        state["pending"] = {
+            "kind": "kind", "text": compassion(state["kinds"]), "seconds": None,
+            "started": None, "snoozed_until": None, "beeped": False,
+        }
         return
     settings = settings or load_settings()
     text, seconds, count = exercise(settings["level"])
@@ -525,6 +534,8 @@ def mod(button):
             advance(state, now)
         elif button == "now":
             right_now(state, now)
+        elif button == "kindnow":
+            right_now(state, now, kind="kind")
         else:
             said = press(state, button, now)
         save_state(state)
@@ -577,7 +588,7 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15, kind 10|15|30|45, claudes 1-20.")
+            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-20.")
             sys.exit(1)
         if value not in choices:
             print(f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -633,7 +644,7 @@ if __name__ == "__main__":
             hook()
         except Exception:
             pass
-    elif mode in ("tick", "now", "go", "done", "snooze", "beep"):
+    elif mode in ("tick", "now", "kindnow", "go", "done", "snooze", "beep"):
         mod(mode)
     elif mode in ("level", "every", "kind", "claudes"):
         choose(sys.argv[1:])
