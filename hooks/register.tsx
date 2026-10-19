@@ -31,7 +31,7 @@ const CARD_CHROME_ROWS = 6
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
 
-type Command = 'tick' | 'now' | 'go' | 'done' | 'snooze' | 'beep'
+type Command = 'tick' | 'now' | 'kindnow' | 'go' | 'done' | 'snooze' | 'beep'
 type Press = { go: () => void; done: () => void; snooze: () => void }
 // The elements a nudge is drawn with; every surface's table has them.
 type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
@@ -327,8 +327,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise right now, or set the level, how often to exercise or be kind, and how many Claudes may be open',
-      argumentHint: '[now] [level easy|medium|hard] [[every] 5|10|15] [kind 10|15|30|45] [claudes 1-20]',
+      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, and how many Claudes may be open',
+      argumentHint: '[now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -340,12 +340,13 @@ export const register: Register = on => {
   on('command.run', { command: 'bod' }, async ($, e) => {
     const args = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const [setting] = args
+    const kindNow = setting === 'kind' && args[1] === 'now'
 
-    if (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes') {
+    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes')) {
       return { text: await settings($, args) }
     }
 
-    const reply = setting === 'now' ? await bod($, 'now') : null
+    const reply = kindNow ? await bod($, 'kindnow') : setting === 'now' ? await bod($, 'now') : null
 
     if (reply?.nudge) {
       return { text: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)}` }
