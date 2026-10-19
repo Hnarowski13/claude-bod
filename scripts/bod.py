@@ -4,7 +4,9 @@ for the day.
 
 Two nudges on two separate timers: a short exercise every 5, 10 or 15
 minutes of work (her pick, 5 by default), and something kind to herself
-every 10, 15, 30 or 45 (her pick too, 15 by default). Every CAP_CHECK_MINUTES it checks today's hours, and once
+every 10, 15, 30 or 45 (her pick too, 15 by default). Every CHECK_IN_MINUTES a
+workflow check-in asks how it's going and offers one way out of Claude-FOG
+(too many Claudes, lost track of what each one is doing). Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
 
 Entry points:
@@ -23,7 +25,7 @@ Entry points:
                   at the end of a countdown (one session plays it, not all).
   bod.py now      `/bod now`: the next exercise on show right away, the
                   other timers left as they are.
-  bod.py show move | plank | kind
+  bod.py show move | plank | kind | check
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
   bod.py level easy | medium | hard
@@ -60,6 +62,8 @@ from hours import GAP_MINUTES, timestamps  # noqa: E402
 
 # How often to add up today's hours (a scan of every transcript) for the cap.
 CAP_CHECK_MINUTES = 30
+# How often the workflow check-in comes up.
+CHECK_IN_MINUTES = 45
 BREAK_MINUTES = 20
 DAILY_CAP_HOURS = 4
 STRETCH_LIMIT_MINUTES = 90
@@ -111,16 +115,28 @@ COMPASSION = [
     "stretch your arms up and smile",
     "remember you don't have to finish everything today",
 ]
+# Ways out of Claude-FOG, one per check-in, in turn.
+FOG_FIXES = [
+    "close every tab whose PR has merged",
+    "answer the hot pink tabs first, then look at the rest",
+    "go through your tabs and say what each one is doing",
+    "pick the one session that matters most and finish it before touching another",
+    "don't start a new ticket until one of the open ones is merged",
+    "drop your Claude cap by one for the next hour (/bod claudes)",
+    "write down the one thing you want done this hour",
+    "step away from the screen for two minutes, then come back to one tab",
+]
+CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
 
 
-TIMES = ("last_prompt", "last_move", "last_cap", "last_kind")
-COUNTS = ("moves", "kinds")
+TIMES = ("last_prompt", "last_move", "last_cap", "last_kind", "last_check")
+COUNTS = ("moves", "kinds", "checks")
 # Only set while the mod runs: its last tick, and the pause after a done.
 OPTIONAL_TIMES = ("mod_seen", "quiet_until")
-# The nudge on show is {"kind": move | kind, "text", "seconds",
+# The nudge on show is {"kind": move | kind | check, "text", "seconds",
 # "beeped", and these times}. "started" is when she pressed go.
 PENDING_TIMES = ("started", "snoozed_until")
-LAST = {"move": "last_move", "kind": "last_kind"}
+LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check"}
 
 
 def load_state():
@@ -129,6 +145,8 @@ def load_state():
             raw = json.load(fh)
         # last_cap was last_stand while there was a standing desk nudge.
         raw.setdefault("last_cap", raw.get("last_stand"))
+        # From before the check-in: its timer starts now-ish, with the others.
+        raw.setdefault("last_check", raw.get("last_prompt"))
         state = {key: datetime.fromisoformat(raw[key]) for key in TIMES}
         for key in COUNTS:
             state[key] = int(raw.get(key, 0))
@@ -271,6 +289,14 @@ def kind_nudge(kinds):
     return f"Be nice to yourself: {compassion(kinds)}."
 
 
+def fog_fix(checks):
+    return FOG_FIXES[checks % len(FOG_FIXES)]
+
+
+def check_nudge(checks):
+    return f"Workflow check-in: {CHECK_IN_QUESTION} Try this: {fog_fix(checks)}."
+
+
 def away(state, now):
     return now - state["last_prompt"] >= timedelta(minutes=BREAK_MINUTES)
 
@@ -310,6 +336,10 @@ def prompted(state, now):
         nudges.append(kind_nudge(state["kinds"]))
         state["last_kind"] = now
         state["kinds"] += 1
+    if due(state, "last_check", CHECK_IN_MINUTES, now):
+        nudges.append(check_nudge(state["checks"]))
+        state["last_check"] = now
+        state["checks"] += 1
     return state, nudges
 
 
@@ -328,7 +358,7 @@ def hook():
                 "hookSpecificOutput": {
                     "hookEventName": "UserPromptSubmit",
                     "additionalContext": (
-                        "Movement nudges for the user (they asked for these, from the Claude Bod plugin). "
+                        "Movement and workflow nudges for the user (they asked for these, from the Claude Bod plugin). "
                         "Open your next reply with each one as a short line of its own, in these words "
                         "or close to them, then carry on with what they asked:\n" + "\n".join(nudges)
                     ),
@@ -358,7 +388,10 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
             # Not a nudge to finish: it stays up for the day, beside the others.
             state["stop"] = {"text": stop_nudge(worked), "date": now.date().isoformat()}
         state["last_cap"] = now
-    if due(state, "last_move", settings["every"], now):
+    # The check-in first: it's the rare one, and the exercise is never far behind.
+    if due(state, "last_check", CHECK_IN_MINUTES, now):
+        pending = {"kind": "check", "text": fog_fix(state["checks"]), "seconds": None}
+    elif due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
     elif due(state, "last_kind", settings["kind"], now):
@@ -406,6 +439,8 @@ def press(state, button, now):
             state["moves"] += pending.get("count", 1)
         elif pending["kind"] == "kind":
             state["kinds"] += 1
+        elif pending["kind"] == "check":
+            state["checks"] += 1
         state["pending"] = None
         state["quiet_until"] = now + timedelta(seconds=QUIET_SECONDS)
         if pending["started"]:
@@ -502,7 +537,7 @@ def show(kind):
         state = fresh_state(now, load_state())
         plank = kind == "plank"
         kind = "move" if plank else kind
-        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES))
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES))
         advance(state, now, lambda now: timedelta(0))
         if plank:
             # A lone plank, to see the countdown.
@@ -579,6 +614,7 @@ def status():
     if state:
         print(f"Last movement nudge: {fmt(now - state['last_move'])} ago")
         print(f"Last compassion nudge: {fmt(now - state['last_kind'])} ago")
+        print(f"Last workflow check-in: {fmt(now - state['last_check'])} ago")
 
     if over_cap(worked):
         print("Verdict: STOP for the day, over the cap")

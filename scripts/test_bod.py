@@ -388,6 +388,7 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(self.run_bod("show", path, "plank")["nudge"]["seconds"], 20)
             self.assertEqual(self.run_bod("show", path, "kind")["nudge"]["kind"], "kind")
             self.assertEqual(self.run_bod("tick", path)["nudge"]["kind"], "kind")
+            self.assertEqual(self.run_bod("show", path, "check")["nudge"]["kind"], "check")
 
     def test_level_and_every_are_kept_and_checked(self):
         run = lambda *args: subprocess.run(  # noqa: E731
@@ -432,6 +433,39 @@ class CommandLine(unittest.TestCase):
             with open(path) as fh:
                 self.assertEqual(json.load(fh)["moves"], 4)
 
+
+
+class CheckIn(unittest.TestCase):
+    def test_a_check_in_goes_up_every_45_minutes(self):
+        state = working(check=44)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertIsNone(state["pending"])
+        state = working(check=45)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertEqual(state["pending"]["kind"], "check")
+        self.assertEqual(state["pending"]["text"], bod.FOG_FIXES[0])
+
+    def test_it_goes_ahead_of_a_due_exercise(self):
+        state = working(move=11, check=46)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertEqual(state["pending"]["kind"], "check")
+
+    def test_done_restarts_it_and_the_next_one_offers_a_different_fix(self):
+        state = working(check=46)
+        bod.advance(state, NOW, NOT_OVER)
+        bod.press(state, "done", NOW)
+        self.assertEqual(state["last_check"], NOW)
+        self.assertEqual(state["checks"], 1)
+        later = NOW + minutes(46)
+        state["last_prompt"] = later
+        bod.advance(state, later, NOT_OVER)
+        self.assertEqual(state["pending"]["text"], bod.FOG_FIXES[1])
+
+    def test_without_the_mod_claude_passes_it_on(self):
+        state = working(check=46, prompt=1)
+        state, nudges = bod.prompted(state, NOW)
+        self.assertIn(f"Workflow check-in: {bod.CHECK_IN_QUESTION} Try this: {bod.FOG_FIXES[0]}.", nudges)
+        self.assertEqual(state["checks"], 1)
 
 
 class Worked(unittest.TestCase):

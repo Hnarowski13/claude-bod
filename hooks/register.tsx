@@ -5,7 +5,8 @@
 //
 // An exercise nudge takes the session over: a box in the
 // band above the prompt, full width, and no prompt is sent until it's done (or
-// put off with "not now"). Kindness nudges and the "stop for the day" line
+// put off with "not now"). So does the workflow check-in every 45 minutes,
+// with one thing to try against Claude-FOG. Kindness nudges and the "stop for the day" line
 // show in the same band as a single line.
 //
 // The status line under the prompt keeps a running total of today's hours,
@@ -20,7 +21,10 @@ import type { Nudge, Reply, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
-const ICONS = { move: '🤸', kind: '💛' }
+const ICONS = { move: '🤸', kind: '💛', check: '🧭' }
+const TITLES = { move: 'Movement break', check: 'Workflow check-in' }
+// What the check-in asks, over the one thing to try (bod.py's CHECK_IN_QUESTION).
+const CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
 // The box's frame, its heading, the blank rows and the button row around the lines.
 const CARD_CHROME_ROWS = 6
 
@@ -44,6 +48,10 @@ const inLine = (nudge: Nudge) => steps(nudge).join(' → ')
 export const headline = (nudge: Nudge) => {
   if (nudge.kind === 'move') {
     return `Movement break: ${inLine(nudge)}`
+  }
+
+  if (nudge.kind === 'check') {
+    return `Workflow check-in: ${CHECK_IN_QUESTION} Try this: ${nudge.text}`
   }
 
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
@@ -229,11 +237,13 @@ async function finish($: EngineInterface) {
 }
 
 // The takeover card: a box with what to do, one exercise per line, over the
-// timer and buttons. Null when it doesn't fit in `rows`.
+// timer and buttons; for a check-in, the question and the one thing to try.
+// Null when it doesn't fit in `rows`.
 function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
-  const todo = steps(nudge)
+  const isCheck = nudge.kind === 'check'
+  const todo = isCheck ? [CHECK_IN_QUESTION, `Try this: ${nudge.text}`] : steps(nudge)
 
   if (todo.length + CARD_CHROME_ROWS > rows) {
     return null
@@ -243,16 +253,21 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={1}>
       <Box gap={1} flexWrap="wrap">
         <Text bold color="claude">
-          {ICONS[nudge.kind]} Movement break
+          {ICONS[nudge.kind]} {isCheck ? TITLES.check : TITLES.move}
         </Text>
         <Text dimColor>· no prompts until this is done</Text>
       </Box>
       <Box flexDirection="column" paddingX={2}>
         {todo.map((step, index) => (
-          <Text bold>{todo.length > 1 ? `${index + 1}. ${step}` : step}</Text>
+          <Text bold>{todo.length > 1 && !isCheck ? `${index + 1}. ${step}` : step}</Text>
         ))}
       </Box>
-      {isRunning ? (
+      {isCheck ? (
+        <Box gap={1}>
+          <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
+          <Button key="snooze" label="not now (5 min)" hotkey="n" onPress={press.snooze} />
+        </Box>
+      ) : isRunning ? (
         <Box gap={1}>
           <Text color="success">⏱ {timer.text}</Text>
           <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
@@ -287,7 +302,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
       <Text bold>
         {ICONS[nudge.kind]} {headline(nudge)}
       </Text>
-      {nudge.kind === 'kind' ? (
+      {nudge.kind !== 'move' ? (
         <Button key="done" label="done ✓" hotkey="d" variant="primary" onPress={press.done} />
       ) : (
         <Button key="go" label="go! ▶" hotkey="g" variant="primary" onPress={press.go} />
@@ -378,8 +393,10 @@ export const register: Register = on => {
     // Her words go back in the box, to send once she's done.
     await $.prompt.fill({ text: e.text }).catch(() => undefined)
 
+    const how = reply.nudge.kind === 'move' ? 'Press go and then done' : 'Press done'
+
     return {
-      drop: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)} first! Press go and then done, or "not now" for 5 minutes (click a button, or ctrl+x tab for the keys).`,
+      drop: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)} first! ${how}, or "not now" for 5 minutes (click a button, or ctrl+x tab for the keys).`,
     }
   })
 

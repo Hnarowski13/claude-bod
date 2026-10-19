@@ -1,7 +1,7 @@
 {
   "name": "bod",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "author": { "name": "Helena Narowski" },
-  "description": "Wellness for Claude Code: movement, standing-desk and kindness nudges, a stop-for-the-day line, a work check, and a cap on how many Claudes are open at once.",
+  "description": "Wellness for Claude Code: movement and kindness nudges, workflow check-ins, a stop-for-the-day line, a work check, and a cap on how many Claudes are open at once.",
   "types": "./types/index.d.ts"
 }

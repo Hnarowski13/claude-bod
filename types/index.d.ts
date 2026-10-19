@@ -1,6 +1,6 @@
 /** The nudge on show, as `bod.py` prints it; times are epoch milliseconds. */
 export type Nudge = {
-  kind: 'move' | 'kind'
+  kind: 'move' | 'kind' | 'check'
   text: string
   /** Seconds to count down from once started; null counts up instead. */
   seconds: number | null

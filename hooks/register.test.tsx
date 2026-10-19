@@ -268,6 +268,34 @@ test('a kindness nudge has done and no timer', async ($, on) => {
   expect(world.toasts).toEqual(['Nice 💛'])
 })
 
+test('a workflow check-in takes over the band with the question, one fix, done and not now', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'check', text: 'close every tab whose PR has merged', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /Workflow check-in/ })).toBeDefined()
+  expect(await ui.find({ text: /Feeling the Claude-FOG\?/ })).toBeDefined()
+  expect(await ui.find({ text: /Try this: close every tab whose PR has merged/ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+  expect(await ui.find({ key: 'snooze' })).toBeDefined()
+
+  await ui.press({ key: 'done' })
+
+  expect(world.commands).toContain('done')
+})
+
+test('no prompt is sent while a check-in is on show', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'check', text: 'close every tab whose PR has merged', seconds: null })
+  await $.session.start(SESSION)
+
+  const { drop } = await $.prompt.submit(PROMPT)
+
+  expect(drop).toContain('🧭 Workflow check-in')
+  expect(drop).toContain('Press done, or "not now"')
+})
+
 test('not now takes the nudge off the band', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
