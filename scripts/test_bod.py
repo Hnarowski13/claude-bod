@@ -169,6 +169,37 @@ class Press(unittest.TestCase):
         self.assertEqual(bod.press(state, "done", NOW), {})
 
 
+class Skips(unittest.TestCase):
+    def test_not_now_counts_on_the_nudge_and_in_the_days_total(self):
+        state = working(move=11)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertEqual(bod.view(state, NOW)["nudge"]["skipped"], 0)
+        bod.press(state, "snooze", NOW)
+        bod.press(state, "snooze", NOW + minutes(5))
+        back = bod.view(state, NOW + minutes(10))
+        self.assertEqual(back["nudge"]["skipped"], 2)
+        self.assertEqual(back["skips"], 2)
+
+    def test_a_new_nudge_starts_with_no_skips_but_the_day_keeps_counting(self):
+        state = working(move=11)
+        bod.advance(state, NOW, NOT_OVER)
+        bod.press(state, "snooze", NOW)
+        bod.press(state, "done", NOW + minutes(5))
+        state["last_move"] = NOW - minutes(10)
+        bod.advance(state, NOW + minutes(7), NOT_OVER)
+        shown = bod.view(state, NOW + minutes(7))
+        self.assertEqual(shown["nudge"]["skipped"], 0)
+        self.assertEqual(shown["skips"], 1)
+
+    def test_the_count_starts_over_the_next_day_and_survives_a_break(self):
+        state = working(move=11)
+        bod.advance(state, NOW, NOT_OVER)
+        bod.press(state, "snooze", NOW)
+        state = bod.fresh_state(NOW + minutes(30), state)
+        self.assertEqual(bod.view(state, NOW + minutes(30))["skips"], 1)
+        self.assertEqual(bod.view(state, NOW + timedelta(days=1))["skips"], 0)
+
+
 class Upcoming(unittest.TestCase):
     EVERY_5 = {"level": "easy", "every": 5, "kind": 15}
 

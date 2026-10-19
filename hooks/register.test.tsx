@@ -45,6 +45,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     paused: false,
     // Seconds worked today, as bod.py would count them; undefined leaves it out.
     worked: undefined as number | undefined,
+    // How many times she's said "not now" today, as bod.py would count them.
+    skips: 0,
     // What the status line says, as the engine would draw it.
     status: undefined as string | undefined,
     // A nudge bod.py puts on show once the clock reaches `at`.
@@ -145,6 +147,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       world.nudge = { ...nudge, started: clock.now() }
     } else if (command === 'snooze') {
       world.nudge = null
+      world.skips += 1
     } else if (command === 'done' && nudge) {
       if (nudge.started !== null) {
         said.took = Math.floor((clock.now() - nudge.started) / 1000)
@@ -157,7 +160,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     return ok(
-      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, ...said })
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, skips: world.skips, ...said })
     )
   })
 
@@ -306,6 +309,26 @@ test('not now takes the nudge off the band', async ($, on) => {
 
   expect(world.commands).toContain('snooze')
   expect(await ui.find({ text: /squats/ })).toBeUndefined()
+})
+
+test('the status line counts the day\'s skips, and a nudge that comes back says it was skipped', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
+  world.next = { move: START + 182_000 }
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows: 20 } })
+
+  await ui.press({ key: 'snooze' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('🤸 move in 3:01 · 🙈 1 skipped today')
+
+  world.nudge = { kind: 'move', text: '10 squats', seconds: null, started: null, skipped: 1 }
+  world.next = null
+  await clock.advance(5_000)
+
+  expect(await ui.find({ text: /you skipped once already/ })).toBeDefined()
+  expect(world.status).toBe('🙈 1 skipped today')
 })
 
 test('a nudge another session raised shows up on the next poll', async ($, on) => {
