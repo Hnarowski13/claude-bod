@@ -386,9 +386,9 @@ export const register: Register = on => {
 
     const over = await overLimit($)
 
+    // Claude Code puts a dropped prompt back in the box itself; filling it
+    // here as well showed her words twice.
     if (over !== null) {
-      await $.prompt.fill({ text: e.text }).catch(() => undefined)
-
       return { drop: over }
     }
 
@@ -410,9 +410,6 @@ export const register: Register = on => {
     if (!locks(reply.nudge)) {
       return next(e)
     }
-
-    // Her words go back in the box, to send once she's done.
-    await $.prompt.fill({ text: e.text }).catch(() => undefined)
 
     const how = reply.nudge.kind === 'move' ? 'Press go and then done' : 'Press done'
 
