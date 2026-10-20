@@ -82,10 +82,11 @@ worktree if one has it; otherwise create one and
 `git checkout -B <headRefName> origin/<headRefName>` inside it.
 
 Color and name the tab by risk (green for low/medium, red for high, `working`
-if unlabeled). The script lives in new-goats and is shared:
+if unlabeled). Start the name with 💪 so a Bod worker stands out from her
+new-goats tabs. The script lives in new-goats and is shared:
 
 ```bash
-~/Projects/new-goats/bin/ticket-tab-color <low|medium|high|working> "bod #<n> <two or three words>"
+~/Projects/new-goats/bin/ticket-tab-color <low|medium|high|working> "💪 bod #<n> <two or three words>"
 ```
 
 ## 3. Implement
