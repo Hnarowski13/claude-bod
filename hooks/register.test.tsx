@@ -379,14 +379,14 @@ test('where the band is too short for the box, the nudge is one line', async ($,
   expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
-test('no prompt is sent while an exercise is on show, and her words are kept', async ($, on) => {
+test('no prompt is sent while an exercise is on show, and her words are left for Claude Code to put back', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
   await $.session.start(SESSION)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
 
   expect((await $.prompt.submit(PROMPT)).drop).toContain('Movement break: 10 squats first!')
-  expect(world.refilled).toEqual(['fix the bug'])
+  expect(world.refilled).toEqual([])
 
   await ui.press({ key: 'go' })
 
@@ -428,14 +428,14 @@ test('a broken bod.py never locks her out', async ($, on) => {
   expect(world.isPanelOpen).toBe(false)
 })
 
-test('a session past the Claude cap has its prompt refused, and her words are kept', async ($, on) => {
+test('a session past the Claude cap has its prompt refused, and her words are left for Claude Code to put back', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
   world.limit = JSON.stringify({ decision: 'block', reason: 'You have 6 Claudes open — the limit is 4.' })
 
   expect(await $.prompt.submit(PROMPT)).toEqual({ drop: '🧠 You have 6 Claudes open — the limit is 4.' })
-  expect(world.refilled).toEqual(['fix the bug'])
+  expect(world.refilled).toEqual([])
 
   world.limit = ''
   expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })

@@ -1,7 +1,9 @@
 {
   "name": "bod",
-  "version": "0.13.0",
-  "author": { "name": "Helena Narowski" },
+  "version": "0.13.1",
+  "author": {
+    "name": "Helena Narowski"
+  },
   "description": "Wellness for Claude Code: movement and kindness nudges, workflow check-ins, a stop-for-the-day line, a work check, and a cap on how many Claudes are open at once.",
   "types": "./types/index.d.ts"
 }
