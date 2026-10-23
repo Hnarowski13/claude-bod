@@ -526,6 +526,13 @@ export const register: Register = on => {
     )
   })
 
+  // Left and right in the form walked the ring off its rows onto the engine's
+  // own stops (the close mark, other panes' tabs), and Enter then acted on
+  // Claude Code instead. Keep her keys on the form; Esc still closes it.
+  on('ui.focus', { requestId: CONFIG }, ($, e, next) =>
+    e.element === undefined && e.origin.kind === 'person' ? { deny: 'kept on the form' } : next(e),
+  )
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, view)
 
