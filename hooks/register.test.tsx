@@ -607,6 +607,19 @@ test('/bod config Save with nothing changed says so, and Cancel saves nothing', 
   await ui.unmount()
 })
 
+test("/bod config keeps the arrows on its rows, off Claude Code's own close mark and tabs", async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, null)
+  on('ui.focus', () => ({}))
+  await $.session.start(SESSION)
+
+  const SITE = { component: 'Pane', requestId: 'bod-config' } as const
+  const PERSON = { kind: 'person' } as const
+
+  expect(await $.ui.focus({ ...SITE, origin: PERSON })).toEqual({ deny: 'kept on the form' })
+  expect(await $.ui.focus({ ...SITE, origin: PERSON, plugin: 'bod', element: 'kind' })).toEqual({})
+})
+
 test('/bod config lists the settings instead when the form cannot be drawn', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
