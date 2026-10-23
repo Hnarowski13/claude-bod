@@ -230,7 +230,7 @@ class Upcoming(unittest.TestCase):
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "snooze", NOW)
-        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
+        self.assertEqual(self.next_in(state), {"move": bod.DEFAULT_SETTINGS["snooze"] * 60})
 
     def test_not_now_on_kindness_keeps_the_exercise_countdown(self):
         state = working(move=2, kind=46)
@@ -238,7 +238,7 @@ class Upcoming(unittest.TestCase):
         self.assertEqual(state["pending"]["kind"], "kind")
         bod.press(state, "snooze", NOW)
         # The exercise waits for the kindness nudge to come back and be done.
-        self.assertEqual(self.next_in(state), {"move": bod.SNOOZE_MINUTES * 60})
+        self.assertEqual(self.next_in(state), {"move": bod.DEFAULT_SETTINGS["snooze"] * 60})
         later = NOW + minutes(4)
         self.assertEqual(self.next_in(state, later), {"move": 60})
 
@@ -380,14 +380,14 @@ class Levels(unittest.TestCase):
 
     def test_done_counts_every_exercise_in_the_set(self):
         state = working(move=6)
-        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "kind": 15, "claudes": 5})
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "kind": 15, "claudes": 5, "snooze": 5})
         bod.press(state, "done", NOW)
         self.assertEqual(state["moves"], 3)
 
     def test_a_bad_settings_file_falls_back_to_the_defaults(self):
         with open(bod.SETTINGS_PATH, "w") as fh:
             fh.write('{"level": "extreme", "every": 7, "kind": 15}')
-        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "kind": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5})
 
 
 class CommandLine(unittest.TestCase):
@@ -436,18 +436,18 @@ class CommandLine(unittest.TestCase):
         )
         self.assertEqual(run("level", "hard").stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge.")
         self.assertEqual(run("every", "15").stdout.strip(), "Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5, "snooze": 5})
         self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, something kind every 15, at most 5 Claudes open at once.")
         both = run("level", "medium", "every", "10")
         self.assertEqual(both.stdout.strip(), "Your level is now medium: 2 exercises per nudge. Your exercises are now every 10 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5, "snooze": 5})
         short = run("level", "hard", "15")
         self.assertEqual(short.stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge. Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5, "snooze": 5})
         run("level", "medium", "every", "10")
         half_bad = run("level", "easy", "every", "7")
         self.assertEqual(half_bad.returncode, 1)
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5, "snooze": 5})
         bad = run("every", "7")
         self.assertEqual(bad.returncode, 1)
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15. It's 10 now.")
@@ -463,7 +463,15 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(too_many.stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
         self.assertEqual(run("claudes", "how", "many").stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
         lines = run("info").stdout.strip().splitlines()
-        self.assertEqual(lines[0], "Claude Bod settings:")
+        self.assertEqual(lines[0], "Claude Bod settings (/bod config to go through them one by one):")
+        self.assertIn("- Snooze: 5 minutes · /bod snooze 2|5|10|15", lines)
+        self.assertEqual(run("snooze", "10").stdout.strip(), "Not now puts a nudge off for 10 minutes.")
+        self.assertEqual(run("snooze", "7").stdout.strip(), "Pick one of: 2, 5, 10, 15. It's 10 now.")
+        self.assertEqual(json.loads(run("choices").stdout), {
+            "settings": {"level": "medium", "every": 10, "kind": 30, "claudes": 3, "snooze": 10},
+            "choices": {"level": ["easy", "medium", "hard"], "every": [5, 10, 15], "kind": [5, 10, 15, 30, 45],
+                        "claudes": list(range(1, 21)), "snooze": [2, 5, 10, 15]},
+        })
         self.assertIn("- Level: medium (2 exercises per nudge) · /bod level easy|medium|hard", lines)
         self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15", lines)
         self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45", lines)

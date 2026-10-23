@@ -166,6 +166,67 @@ async function settings($: EngineInterface, args: string[]): Promise<string> {
   }
 }
 
+type Setting = 'level' | 'every' | 'kind' | 'claudes' | 'snooze'
+type Choices = { settings: Record<Setting, string | number>; choices: Record<Setting, (string | number)[]> }
+
+// What /bod config asks, one setting at a time, in bod.py's order.
+const QUESTIONS: Record<Setting, { question: string; header: string; unit: string }> = {
+  level: { question: 'How much exercise per nudge?', header: 'Level', unit: '' },
+  every: { question: 'How many minutes of work between exercises?', header: 'Exercise', unit: ' minutes' },
+  kind: { question: 'How many minutes between kindness nudges?', header: 'Kindness', unit: ' minutes' },
+  claudes: { question: 'How many Claudes may be open at once?', header: 'Claude cap', unit: '' },
+  snooze: { question: 'How long should "not now" put a nudge off for?', header: 'Snooze', unit: ' minutes' },
+}
+
+// The dialog shows at most 4 options: the ones around the current value, which
+// is marked; the rest can be typed under Other.
+export const options = (choices: (string | number)[], current: string | number, unit: string) => {
+  const at = Math.max(0, choices.indexOf(current))
+  const start = Math.min(Math.max(0, at - 1), Math.max(0, choices.length - 4))
+
+  return choices.slice(start, start + 4).map((c) => `${c}${unit}${c === current ? ' (now)' : ''}`)
+}
+
+// A label back to the value bod.py takes: "10 minutes (now)" is 10, typed "Hard" is hard.
+export const answer = (label: string) => label.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+
+// `/bod config`: every setting, one question each, saved together at the end
+// (bod.py checks them all before saving any). Escape stops with nothing changed.
+async function config($: EngineInterface): Promise<string> {
+  if (script === null) {
+    return 'Claude Bod needs python3 to run.'
+  }
+
+  let current: Choices
+
+  try {
+    current = JSON.parse((await $.process.run(['python3', script, 'choices'], { timeoutMs: 10000 })).stdout) as Choices
+  } catch {
+    return 'Claude Bod could not read your settings.'
+  }
+
+  const pairs: string[] = []
+
+  for (const key of Object.keys(QUESTIONS) as Setting[]) {
+    const { question, header, unit } = QUESTIONS[key]
+    const choices = current.choices[key]
+    const all = choices.length > 4 ? ` (${choices[0]} to ${choices[choices.length - 1]}, type any under Other)` : ''
+    let picked: string
+
+    try {
+      picked = answer(await $.ui.ask(`${question}${all}`, { options: options(choices, current.settings[key], unit), header }))
+    } catch {
+      return 'Stopped. Nothing changed.'
+    }
+
+    if (picked !== String(current.settings[key])) {
+      pairs.push(key, picked)
+    }
+  }
+
+  return pairs.length === 0 ? `Nothing changed. ${await settings($, ['settings'])}` : settings($, pairs)
+}
+
 // Why this session may not send prompts right now, or null when it may. Too
 // many Claudes open is the only reason; a broken script lets everything through.
 async function overLimit($: EngineInterface): Promise<string | null> {
@@ -347,8 +408,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, and how many Claudes may be open',
-      argumentHint: '[info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20]',
+      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts (config: all of them in turn)',
+      argumentHint: '[config] [info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20] [snooze 2|5|10|15]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -362,8 +423,12 @@ export const register: Register = on => {
     const [setting] = args
     const kindNow = setting === 'kind' && args[1] === 'now'
 
-    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes' || setting === 'info')) {
+    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
       return { text: await settings($, args) }
+    }
+
+    if (setting === 'config') {
+      return { text: await config($) }
     }
 
     const reply = kindNow ? await bod($, 'kindnow') : setting === 'now' ? await bod($, 'now') : null
@@ -372,8 +437,12 @@ export const register: Register = on => {
       return { text: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)}` }
     }
 
-    // `/bod` alone or `/bod settings`: what it's set to, and how to start now.
-    return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
+    // `/bod` alone or `/bod settings` (or `/bod now` with nothing to show): what it's set to, and how to start now.
+    if (setting === undefined || setting === 'settings' || setting === 'now' || kindNow) {
+      return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
+    }
+
+    return { text: `Claude Bod doesn't know "/bod ${args.join(' ')}". /bod info lists every setting and /bod config goes through them one by one.` }
   })
 
   // The lock: while an exercise nudge is on show, nothing she

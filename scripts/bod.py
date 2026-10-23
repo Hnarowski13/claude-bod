@@ -21,7 +21,7 @@ Entry points:
                   show, as JSON, today's hours worked among it.
   bod.py go | done | snooze | beep
                   The mod's buttons: start the exercise timer, finish the
-                  nudge, put it off for SNOOZE_MINUTES, and claim the sound
+                  nudge, put it off for her snooze minutes, and claim the sound
                   at the end of a countdown (one session plays it, not all).
   bod.py now      `/bod now`: the next exercise on show right away, the
                   other timers left as they are.
@@ -37,7 +37,12 @@ Entry points:
                   How many minutes of work between exercise nudges. Both can
                   go in one call: bod.py level hard every 10, or
                   just bod.py level hard 10.
+  bod.py snooze 2 | 5 | 10 | 15
+                  How many minutes "not now" puts a nudge off for (bare
+                  `snooze` is the button itself).
   bod.py settings What Claude Bod is set to, in a sentence.
+  bod.py choices  Her settings and what each may be, as JSON, for the
+                  mod's /bod config to ask about one by one.
   bod.py info     Every setting, one per line: her choices and the fixed
                   timers alike.
   bod.py status   What the work-check skill runs: hours today, the current
@@ -71,7 +76,6 @@ CHECK_IN_MINUTES = 45
 BREAK_MINUTES = 20
 DAILY_CAP_HOURS = 4
 STRETCH_LIMIT_MINUTES = 90
-SNOOZE_MINUTES = 5
 # After a done, how long the band stays empty before the next nudge may show.
 QUIET_SECONDS = 60
 # The mod polls every few seconds; no tick for this long means it isn't running.
@@ -87,7 +91,12 @@ EVERY_CHOICES = (5, 10, 15)
 KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
 CLAUDES_CHOICES = range(1, 21)
-DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5}
+# How long "not now" puts a nudge off for.
+SNOOZE_CHOICES = (2, 5, 10, 15)
+DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5}
+# What each setting may be, in the order /bod config asks about them.
+CHOICES = {"level": tuple(LEVELS), "every": EVERY_CHOICES, "kind": KIND_CHOICES, "claudes": CLAUDES_CHOICES,
+           "snooze": SNOOZE_CHOICES}
 
 # (what to do, with {} for how many, how many on easy, whether it's seconds
 # to count down from rather than reps)
@@ -253,11 +262,7 @@ def load_settings():
             raw = json.load(fh)
     except (OSError, ValueError):
         raw = {}
-    level = raw.get("level") if raw.get("level") in LEVELS else DEFAULT_SETTINGS["level"]
-    every = raw.get("every") if raw.get("every") in EVERY_CHOICES else DEFAULT_SETTINGS["every"]
-    kind = raw.get("kind") if raw.get("kind") in KIND_CHOICES else DEFAULT_SETTINGS["kind"]
-    claudes = raw.get("claudes") if raw.get("claudes") in CLAUDES_CHOICES else DEFAULT_SETTINGS["claudes"]
-    return {"level": level, "every": every, "kind": kind, "claudes": claudes}
+    return {key: raw.get(key) if raw.get(key) in choices else DEFAULT_SETTINGS[key] for key, choices in CHOICES.items()}
 
 
 def save_settings(settings):
@@ -449,7 +454,7 @@ def press(state, button, now):
         pending["started"] = pending["started"] or now
         pending["snoozed_until"] = None
     elif button == "snooze":
-        pending["snoozed_until"] = now + timedelta(minutes=SNOOZE_MINUTES)
+        pending["snoozed_until"] = now + timedelta(minutes=load_settings()["snooze"])
         pending["started"] = None
         pending["beeped"] = False
         # This nudge says so when it comes back; the status line keeps the day's total.
@@ -587,13 +592,13 @@ def info(settings):
     count, _ = LEVELS[settings["level"]]
     what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
     return "\n".join([
-        "Claude Bod settings:",
+        "Claude Bod settings (/bod config to go through them one by one):",
         f"- Level: {settings['level']} ({what} per nudge) · /bod level easy|medium|hard",
         f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))}",
         f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))}",
         f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
         f"- Workflow check-in every {CHECK_IN_MINUTES} minutes",
-        f"- Snooze: {SNOOZE_MINUTES} minutes",
+        f"- Snooze: {settings['snooze']} minutes · /bod snooze {'|'.join(map(str, SNOOZE_CHOICES))}",
         f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
         f"- Daily cap: {DAILY_CAP_HOURS} hours, then a stop-for-the-day line",
         f"- Take a break after {STRETCH_LIMIT_MINUTES} minutes without one (/work-check)",
@@ -608,7 +613,7 @@ def choose(args):
     before = dict(settings)
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
     args = [part for i, arg in enumerate(args)
-            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes")) else [arg])]
+            for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes", "snooze")) else [arg])]
     if not args or len(args) % 2:
         args = [*args, ""]
     for key, value in zip(args[::2], args[1::2]):
@@ -621,10 +626,13 @@ def choose(args):
         elif key == "claudes":
             value = int(value) if value.isdigit() else None
             choices = CLAUDES_CHOICES
+        elif key == "snooze":
+            value = int(value) if value.isdigit() else None
+            choices = SNOOZE_CHOICES
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-20.")
+            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-20, snooze 2|5|10|15.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -646,6 +654,8 @@ def confirm(key, settings, before):
         return f"Your exercises are now every {settings['every']} minutes."
     if key == "kind":
         return f"Something kind is now every {settings['kind']} minutes."
+    if key == "snooze":
+        return f"Not now puts a nudge off for {settings['snooze']} minutes."
     if settings["claudes"] == before["claudes"]:
         return f"Your Claude cap is still {settings['claudes']}."
     return f"Your Claude cap is now {settings['claudes']} (was {before['claudes']})."
@@ -683,12 +693,15 @@ if __name__ == "__main__":
             hook()
         except Exception:
             pass
-    elif mode in ("tick", "now", "kindnow", "go", "done", "snooze", "beep"):
+    elif mode in ("tick", "now", "kindnow", "go", "done", "snooze", "beep") and not (mode == "snooze" and sys.argv[2:]):
         mod(mode)
-    elif mode in ("level", "every", "kind", "claudes"):
+    elif mode in ("level", "every", "kind", "claudes", "snooze"):
         choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))
+    elif mode == "choices":
+        print(json.dumps({"settings": load_settings(),
+                          "choices": {key: list(choices) for key, choices in CHOICES.items()}}))
     elif mode == "info":
         print(info(load_settings()))
     elif mode == "show" and sys.argv[2:] and sys.argv[2] in (*LAST, "plank"):
