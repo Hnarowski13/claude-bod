@@ -180,6 +180,7 @@ const ROWS: { key: Setting; label: string; unit: string }[] = [
   { key: 'claudes', label: 'Claude cap', unit: '' },
   { key: 'snooze', label: 'Snooze', unit: ' min' },
 ]
+const FOCUS_RETRY_MS = 300
 const LABEL_WIDTH = Math.max(...ROWS.map(row => row.label.length)) + 1
 
 // The value after `value` among `choices`, back to the first after the last.
@@ -207,9 +208,14 @@ async function openConfig($: EngineInterface): Promise<string> {
 
   await update($, form, () => ({ saved, picked: saved, choices }))
 
-  const opened = await $.ui.open({ id: CONFIG, title: 'Claude Bod settings', focus: true, closeOnEscape: true, holdToasts: true, rows: ROWS.length + 4 })
+  const pane = { id: CONFIG, title: 'Claude Bod settings', focus: true, closeOnEscape: true, holdToasts: true, rows: ROWS.length + 4 } as const
+  const opened = await $.ui.open(pane)
 
   if (opened.isPlaced) {
+    // The engine hands a pane the keys only over an idle, empty prompt, and
+    // `/bod config` is still running here, so ask again once it's done.
+    $.clock.after(FOCUS_RETRY_MS, () => void $.ui.open(pane))
+
     return 'Claude Bod settings: change what you like, then Save (Esc to cancel).'
   }
 
@@ -525,13 +531,6 @@ export const register: Register = on => {
       </Box>
     )
   })
-
-  // Left and right in the form walked the ring off its rows onto the engine's
-  // own stops (the close mark, other panes' tabs), and Enter then acted on
-  // Claude Code instead. Keep her keys on the form; Esc still closes it.
-  on('ui.focus', { requestId: CONFIG }, ($, e, next) =>
-    e.element === undefined && e.origin.kind === 'person' ? { deny: 'kept on the form' } : next(e),
-  )
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, view)
