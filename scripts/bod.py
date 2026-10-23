@@ -585,6 +585,7 @@ def choose(args):
     ("level hard every 10 kind 30 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
+    before = dict(settings)
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
     args = [part for i, arg in enumerate(args)
             for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes")) else [arg])]
@@ -611,11 +612,11 @@ def choose(args):
             sys.exit(1)
         settings[key] = value
     save_settings(settings)
-    print(" ".join(confirm(key, settings) for key in dict.fromkeys(args[::2])))
+    print(" ".join(confirm(key, settings, before) for key in dict.fromkeys(args[::2])))
 
 
-def confirm(key, settings):
-    """One line saying what a setting is now."""
+def confirm(key, settings, before):
+    """One line saying what a setting is now (and, for the Claude cap, what it was)."""
     if key == "level":
         count, _ = LEVELS[settings["level"]]
         what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
@@ -624,7 +625,9 @@ def confirm(key, settings):
         return f"Your exercises are now every {settings['every']} minutes."
     if key == "kind":
         return f"Something kind is now every {settings['kind']} minutes."
-    return f"Your Claude cap is now {settings['claudes']}."
+    if settings["claudes"] == before["claudes"]:
+        return f"Your Claude cap is still {settings['claudes']}."
+    return f"Your Claude cap is now {settings['claudes']} (was {before['claudes']})."
 
 
 def status():
