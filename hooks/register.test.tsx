@@ -541,58 +541,73 @@ test('a kindness nudge done says "✅ Nice job!" with no time', async ($, on) =>
   expect(world.logs).toEqual(['✅ Nice job!'])
 })
 
-test('/bod config asks about each setting in turn and saves only what changed', async ($, on) => {
+const FORM = {
+  plugin: 'bod',
+  component: 'Pane',
+  requestId: 'bod-config',
+  surface: 'terminal',
+  props: {
+    title: 'Claude Bod settings',
+    isFocused: true,
+    bodyColumns: 60,
+    placement: 'inline',
+    scroll: { offset: 0, bodyRows: 8 },
+    view: {},
+  },
+} as const
+
+test('/bod config opens one form with every setting at its current value, and Save sends only what changed', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  const asked: { question: string; header: string; options: string[] }[] = []
-  // What she picks, by header; Kindness is typed under Other.
-  const picks: Record<string, string> = { Level: 'hard', Exercise: '5 minutes (now)', Kindness: '45', 'Claude cap': '5 (now)', Snooze: '10 minutes' }
-  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
-    const [q] = e.questions
-    asked.push({ question: q.question, header: q.header, options: q.options.map((o) => o.label) })
-
-    return { result: { questions: e.questions, answers: { [q.question]: picks[q.header] } } } as never
-  })
+  world.isWide = true
   await $.session.start(SESSION)
 
-  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod is on hard kind 45 snooze 10.' })
-  expect(world.commands).toContain('level hard kind 45 snooze 10')
-  expect(asked.map((a) => a.header)).toEqual(['Level', 'Exercise', 'Kindness', 'Claude cap', 'Snooze'])
-  expect(asked[0].options).toEqual(['easy (now)', 'medium', 'hard'])
-  expect(asked[2].options).toEqual(['10 minutes', '15 minutes (now)', '30 minutes', '45 minutes'])
-  expect(asked[3].options).toEqual(['4', '5 (now)', '6', '7'])
-  expect(asked[3].question).toBe('How many Claudes may be open at once? (1 to 20, type any under Other)')
+  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod settings: change what you like, then Save (Esc to cancel).' })
+  expect(world.isPanelOpen).toBe(true)
+
+  const ui = await $.ui.mount(FORM)
+  expect((await ui.find({ type: 'Select', key: 'level' }))?.props).toMatchObject({ value: 'easy', autoFocus: true })
+  expect((await ui.find({ type: 'Select', key: 'kind' }))?.props).toMatchObject({ value: '15' })
+  expect((await ui.find({ type: 'Select', key: 'claudes' }))?.props.options).toHaveLength(20)
+
+  await ui.select({ key: 'kind', value: '30' })
+  await ui.select({ key: 'snooze', value: '10' })
+  await ui.press({ key: 'save' })
+
+  expect(world.commands).toContain('kind 30 snooze 10')
+  expect(world.logs).toEqual(['Claude Bod is on 30 snooze 10.'])
+  expect(world.isPanelOpen).toBe(false)
+  await ui.unmount()
 })
 
-test('/bod config asks a question again when the typed answer is not one of its choices', async ($, on) => {
+test('/bod config Save with nothing changed says so, and Cancel saves nothing', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  const asked: string[] = []
-  // Level gets a typo first; everything else stays as it is.
-  const typed = ['extreme', 'medium']
-  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
-    const [q] = e.questions
-    asked.push(q.question)
-    const label = q.header === 'Level' ? (typed.shift() ?? 'easy (now)') : (q.options.find((o) => o.label.endsWith('(now)'))?.label ?? '')
-
-    return { result: { questions: e.questions, answers: { [q.question]: label } } } as never
-  })
+  world.isWide = true
   await $.session.start(SESSION)
 
-  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod is on medium.' })
-  expect(world.commands).toContain('level medium')
-  expect(asked[1]).toBe('"extreme" isn\'t one of the choices (easy, medium, hard). How much exercise per nudge?')
-  expect(asked).toHaveLength(6)
+  await $.command.run(BOD('config'))
+  let ui = await $.ui.mount(FORM)
+  await ui.press({ key: 'save' })
+  expect(world.logs).toEqual(['Nothing changed.'])
+  await ui.unmount()
+
+  await $.command.run(BOD('config'))
+  ui = await $.ui.mount(FORM)
+  await ui.select({ key: 'level', value: 'hard' })
+  await ui.press({ key: 'cancel' })
+  expect(world.isPanelOpen).toBe(false)
+  expect(world.commands.filter(c => c.startsWith('level'))).toEqual([])
+  await ui.unmount()
 })
 
-test('/bod config stops with nothing changed when she presses Escape', async ($, on) => {
+test('/bod config lists the settings instead when the form cannot be drawn', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }))
   await $.session.start(SESSION)
 
-  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Stopped. Nothing changed.' })
-  expect(world.commands.filter((c) => c.startsWith('level') || c.startsWith('snooze '))).toEqual([])
+  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod settings:\n- Claude cap: 5' })
+  expect(world.isPanelOpen).toBe(false)
 })
 
 test('/bod with something it does not know says so and points at info and config', async ($, on) => {
@@ -601,7 +616,7 @@ test('/bod with something it does not know says so and points at info and config
   await $.session.start(SESSION)
 
   expect(await $.command.run(BOD('can i set my snooze?'))).toMatchObject({
-    text: 'Claude Bod doesn\'t know "/bod can i set my snooze?". /bod info lists every setting and /bod config goes through them one by one.',
+    text: 'Claude Bod doesn\'t know "/bod can i set my snooze?". /bod info lists every setting and /bod config sets them all in one form.',
   })
   expect(await $.command.run(BOD('snooze 10'))).toMatchObject({ text: 'Claude Bod is on 10.' })
 })

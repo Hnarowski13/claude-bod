@@ -42,7 +42,7 @@ Entry points:
                   `snooze` is the button itself).
   bod.py settings What Claude Bod is set to, in a sentence.
   bod.py choices  Her settings and what each may be, as JSON, for the
-                  mod's /bod config to ask about one by one.
+                  mod's /bod config form.
   bod.py info     Every setting, one per line: her choices and the fixed
                   timers alike.
   bod.py status   What the work-check skill runs: hours today, the current
@@ -94,7 +94,7 @@ CLAUDES_CHOICES = range(1, 21)
 # How long "not now" puts a nudge off for.
 SNOOZE_CHOICES = (2, 5, 10, 15)
 DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5}
-# What each setting may be, in the order /bod config asks about them.
+# What each setting may be, in the order /bod config shows them.
 CHOICES = {"level": tuple(LEVELS), "every": EVERY_CHOICES, "kind": KIND_CHOICES, "claudes": CLAUDES_CHOICES,
            "snooze": SNOOZE_CHOICES}
 
@@ -592,7 +592,7 @@ def info(settings):
     count, _ = LEVELS[settings["level"]]
     what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
     return "\n".join([
-        "Claude Bod settings (/bod config to go through them one by one):",
+        "Claude Bod settings (/bod config to change them in one form):",
         f"- Level: {settings['level']} ({what} per nudge) · /bod level easy|medium|hard",
         f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))}",
         f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))}",

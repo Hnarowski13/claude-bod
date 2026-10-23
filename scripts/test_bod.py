@@ -463,7 +463,7 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(too_many.stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
         self.assertEqual(run("claudes", "how", "many").stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
         lines = run("info").stdout.strip().splitlines()
-        self.assertEqual(lines[0], "Claude Bod settings (/bod config to go through them one by one):")
+        self.assertEqual(lines[0], "Claude Bod settings (/bod config to change them in one form):")
         self.assertIn("- Snooze: 5 minutes · /bod snooze 2|5|10|15", lines)
         self.assertEqual(run("snooze", "10").stdout.strip(), "Not now puts a nudge off for 10 minutes.")
         self.assertEqual(run("snooze", "7").stdout.strip(), "Pick one of: 2, 5, 10, 15. It's 10 now.")
