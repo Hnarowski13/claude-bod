@@ -566,17 +566,18 @@ test('/bod config opens one form with every setting at its current value, and Sa
   expect(world.isPanelOpen).toBe(true)
 
   const ui = await $.ui.mount(FORM)
-  expect((await ui.find({ type: 'Button', key: 'level-down' }))?.props).toMatchObject({ autoFocus: true })
-  expect(await ui.find({ type: 'Text', text: /^15 min/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /\d\*/ })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'level' }))?.props).toMatchObject({ autoFocus: true })
+  expect((await ui.find({ type: 'Button', key: 'kind' }))?.text).toMatch(/^Kindness every +15 min$/)
 
-  await ui.press({ key: 'kind-up' })
-  await ui.press({ key: 'kind-up' })
-  await ui.press({ key: 'snooze-up' })
-  // Already at the bottom: easy stays easy.
-  await ui.press({ key: 'level-down' })
-  expect((await ui.find({ type: 'Text', text: /^45 min\*/ }))?.props).toMatchObject({ bold: true })
-  expect(await ui.find({ type: 'Text', text: /^easy/ })).toBeTruthy()
+  // Enter steps a row to its next value, back to the first after the last.
+  await ui.press({ key: 'kind' })
+  await ui.press({ key: 'kind' })
+  await ui.press({ key: 'snooze' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level' })
+  expect((await ui.find({ type: 'Button', key: 'kind' }))?.text).toMatch(/45 min \(was 15 min\)$/)
+  expect((await ui.find({ type: 'Button', key: 'level' }))?.text).toMatch(/easy$/)
   await ui.press({ key: 'save' })
 
   expect(world.commands).toContain('kind 45 snooze 10')
@@ -599,7 +600,7 @@ test('/bod config Save with nothing changed says so, and Cancel saves nothing', 
 
   await $.command.run(BOD('config'))
   ui = await $.ui.mount(FORM)
-  await ui.press({ key: 'level-up' })
+  await ui.press({ key: 'level' })
   await ui.press({ key: 'cancel' })
   expect(world.isPanelOpen).toBe(false)
   expect(world.commands.filter(c => c.startsWith('level'))).toEqual([])

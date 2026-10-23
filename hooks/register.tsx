@@ -182,9 +182,8 @@ const ROWS: { key: Setting; label: string; unit: string }[] = [
 ]
 const LABEL_WIDTH = Math.max(...ROWS.map(row => row.label.length)) + 1
 
-// The value one step from `value` among `choices`, stopping at either end.
-export const step = (choices: string[], value: string, by: 1 | -1) =>
-  choices[Math.min(choices.length - 1, Math.max(0, choices.indexOf(value) + by))] ?? value
+// The value after `value` among `choices`, back to the first after the last.
+export const cycle = (choices: string[], value: string) => choices[(choices.indexOf(value) + 1) % choices.length] ?? value
 
 // The pairs bod.py takes for what the form changed: ["kind", "30", ...].
 export const changes = (form: Form) =>
@@ -497,11 +496,10 @@ export const register: Register = on => {
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    // Mods can't read arrow keys in a pane, so each row is a ‹ and a › button
-    // the focus ring moves between; Enter on one steps the value.
-    const move = (key: Setting, by: 1 | -1) =>
-      void update($, form, f => (f === null ? f : { ...f, picked: { ...f.picked, [key]: step(f.choices[key], f.picked[key], by) } }))
-    const width = Math.max(...ROWS.flatMap(({ key, unit }) => shown.choices[key].map(value => `${value}${unit}`.length))) + 1
+    // Mods can't read arrow keys in a pane, so each setting is one row the
+    // focus ring stops on (up and down move between them) and Enter steps it.
+    const stepRow = (key: Setting) =>
+      void update($, form, f => (f === null ? f : { ...f, picked: { ...f.picked, [key]: cycle(f.choices[key], f.picked[key]) } }))
 
     return (
       <Box flexDirection="column" paddingX={1}>
@@ -510,21 +508,20 @@ export const register: Register = on => {
           const isChanged = value !== shown.saved[key]
 
           return (
-            <Box gap={1}>
-              <Text>{label.padEnd(LABEL_WIDTH)}</Text>
-              <Button key={`${key}-down`} label="‹" autoFocus={index === 0 ? true : undefined} onPress={() => move(key, -1)} />
+            <Button key={key} plain autoFocus={index === 0 ? true : undefined} onPress={() => stepRow(key)}>
+              {label.padEnd(LABEL_WIDTH)}
               <Text bold={isChanged} color={isChanged ? 'claude' : undefined}>
-                {`${value}${unit}${isChanged ? '*' : ''}`.padEnd(width)}
+                {`${value}${unit}`}
               </Text>
-              <Button key={`${key}-up`} label="›" onPress={() => move(key, 1)} />
-            </Box>
+              <Text dimColor>{isChanged ? ` (was ${shown.saved[key]}${unit})` : ''}</Text>
+            </Button>
           )
         })}
         <Box gap={1} marginTop={1}>
           <Button key="save" label="Save" hotkey="s" variant="primary" onPress={() => void saveConfig($)} />
           <Button key="cancel" label="Cancel" hotkey="c" onPress={() => void $.ui.close({ id: CONFIG })} />
         </Box>
-        <Text dimColor>arrows or tab move · enter presses · s saves · esc cancels · * changed</Text>
+        <Text dimColor>↑↓ pick a setting · enter changes it · s saves · esc cancels</Text>
       </Box>
     )
   })
