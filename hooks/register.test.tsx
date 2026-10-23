@@ -125,7 +125,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     if (command === 'choices') {
       return ok(JSON.stringify({
         settings: { level: 'easy', every: 5, kind: 15, claudes: 5, snooze: 5 },
-        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 20 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
       }))
     }
 
@@ -566,16 +566,22 @@ test('/bod config opens one form with every setting at its current value, and Sa
   expect(world.isPanelOpen).toBe(true)
 
   const ui = await $.ui.mount(FORM)
-  expect((await ui.find({ type: 'Select', key: 'level' }))?.props).toMatchObject({ value: 'easy', autoFocus: true })
-  expect((await ui.find({ type: 'Select', key: 'kind' }))?.props).toMatchObject({ value: '15' })
-  expect((await ui.find({ type: 'Select', key: 'claudes' }))?.props.options).toHaveLength(20)
+  expect((await ui.find({ type: 'Button', key: 'level' }))?.props).toMatchObject({ autoFocus: true })
+  expect((await ui.find({ type: 'Button', key: 'kind' }))?.text).toMatch(/^Kindness every +15 min$/)
 
-  await ui.select({ key: 'kind', value: '30' })
-  await ui.select({ key: 'snooze', value: '10' })
+  // Enter steps a row to its next value, back to the first after the last.
+  await ui.press({ key: 'kind' })
+  await ui.press({ key: 'kind' })
+  await ui.press({ key: 'snooze' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level' })
+  expect((await ui.find({ type: 'Button', key: 'kind' }))?.text).toMatch(/45 min \(was 15 min\)$/)
+  expect((await ui.find({ type: 'Button', key: 'level' }))?.text).toMatch(/easy$/)
   await ui.press({ key: 'save' })
 
-  expect(world.commands).toContain('kind 30 snooze 10')
-  expect(world.logs).toEqual(['Claude Bod is on 30 snooze 10.'])
+  expect(world.commands).toContain('kind 45 snooze 10')
+  expect(world.logs).toEqual(['Claude Bod is on 45 snooze 10.'])
   expect(world.isPanelOpen).toBe(false)
   await ui.unmount()
 })
@@ -594,7 +600,7 @@ test('/bod config Save with nothing changed says so, and Cancel saves nothing', 
 
   await $.command.run(BOD('config'))
   ui = await $.ui.mount(FORM)
-  await ui.select({ key: 'level', value: 'hard' })
+  await ui.press({ key: 'level' })
   await ui.press({ key: 'cancel' })
   expect(world.isPanelOpen).toBe(false)
   expect(world.commands.filter(c => c.startsWith('level'))).toEqual([])

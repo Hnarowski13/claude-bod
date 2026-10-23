@@ -460,8 +460,8 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(bod.load_settings()["claudes"], 3)
         too_many = run("claudes", "50")
         self.assertEqual(too_many.returncode, 1)
-        self.assertEqual(too_many.stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
-        self.assertEqual(run("claudes", "how", "many").stdout.strip(), "Pick a number from 1 to 20. It's 3 now.")
+        self.assertEqual(too_many.stdout.strip(), "Pick a number from 1 to 10. It's 3 now.")
+        self.assertEqual(run("claudes", "how", "many").stdout.strip(), "Pick a number from 1 to 10. It's 3 now.")
         lines = run("info").stdout.strip().splitlines()
         self.assertEqual(lines[0], "Claude Bod settings (/bod config to change them in one form):")
         self.assertIn("- Snooze: 5 minutes · /bod snooze 2|5|10|15", lines)
@@ -470,12 +470,12 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(json.loads(run("choices").stdout), {
             "settings": {"level": "medium", "every": 10, "kind": 30, "claudes": 3, "snooze": 10},
             "choices": {"level": ["easy", "medium", "hard"], "every": [5, 10, 15], "kind": [5, 10, 15, 30, 45],
-                        "claudes": list(range(1, 21)), "snooze": [2, 5, 10, 15]},
+                        "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
         self.assertIn("- Level: medium (2 exercises per nudge) · /bod level easy|medium|hard", lines)
         self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15", lines)
         self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45", lines)
-        self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-20", lines)
+        self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)
         self.assertIn(f"- Daily cap: {bod.DAILY_CAP_HOURS} hours, then a stop-for-the-day line", lines)
         self.assertEqual(bod.load_settings()["claudes"], 3)
         os.remove(bod.SETTINGS_PATH)

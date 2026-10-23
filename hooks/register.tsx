@@ -182,6 +182,9 @@ const ROWS: { key: Setting; label: string; unit: string }[] = [
 ]
 const LABEL_WIDTH = Math.max(...ROWS.map(row => row.label.length)) + 1
 
+// The value after `value` among `choices`, back to the first after the last.
+export const cycle = (choices: string[], value: string) => choices[(choices.indexOf(value) + 1) % choices.length] ?? value
+
 // The pairs bod.py takes for what the form changed: ["kind", "30", ...].
 export const changes = (form: Form) =>
   ROWS.flatMap(({ key }) => (form.picked[key] !== form.saved[key] ? [key, form.picked[key]] : []))
@@ -204,7 +207,7 @@ async function openConfig($: EngineInterface): Promise<string> {
 
   await update($, form, () => ({ saved, picked: saved, choices }))
 
-  const opened = await $.ui.open({ id: CONFIG, title: 'Claude Bod settings', focus: true, closeOnEscape: true, holdToasts: true, rows: ROWS.length + 3 })
+  const opened = await $.ui.open({ id: CONFIG, title: 'Claude Bod settings', focus: true, closeOnEscape: true, holdToasts: true, rows: ROWS.length + 4 })
 
   if (opened.isPlaced) {
     return 'Claude Bod settings: change what you like, then Save (Esc to cancel).'
@@ -407,7 +410,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20] [snooze 2|5|10|15]',
+      argumentHint: '[config] [info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -492,33 +495,33 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const elements = $.ui.resolve(e)
-
-    // The mobile app draws no Select yet.
-    if (!('Select' in elements)) {
-      return next(e)
-    }
-
-    const { Box, Button, Select, Text } = elements
+    const { Box, Button, Text } = $.ui.resolve(e)
+    // Mods can't read arrow keys in a pane, so each setting is one row the
+    // focus ring stops on (up and down move between them) and Enter steps it.
+    const stepRow = (key: Setting) =>
+      void update($, form, f => (f === null ? f : { ...f, picked: { ...f.picked, [key]: cycle(f.choices[key], f.picked[key]) } }))
 
     return (
       <Box flexDirection="column" paddingX={1}>
-        {ROWS.map(({ key, label, unit }, index) => (
-          <Box gap={1}>
-            <Text>{label.padEnd(LABEL_WIDTH)}</Text>
-            <Select
-              key={key}
-              options={shown.choices[key].map(value => ({ value, label: `${value}${unit}` }))}
-              value={shown.picked[key]}
-              autoFocus={index === 0 ? true : undefined}
-              onSelect={value => void update($, form, f => (f === null ? f : { ...f, picked: { ...f.picked, [key]: value } }))}
-            />
-          </Box>
-        ))}
+        {ROWS.map(({ key, label, unit }, index) => {
+          const value = shown.picked[key]
+          const isChanged = value !== shown.saved[key]
+
+          return (
+            <Button key={key} plain autoFocus={index === 0 ? true : undefined} onPress={() => stepRow(key)}>
+              {label.padEnd(LABEL_WIDTH)}
+              <Text bold={isChanged} color={isChanged ? 'claude' : undefined}>
+                {`${value}${unit}`}
+              </Text>
+              <Text dimColor>{isChanged ? ` (was ${shown.saved[key]}${unit})` : ''}</Text>
+            </Button>
+          )
+        })}
         <Box gap={1} marginTop={1}>
           <Button key="save" label="Save" hotkey="s" variant="primary" onPress={() => void saveConfig($)} />
           <Button key="cancel" label="Cancel" hotkey="c" onPress={() => void $.ui.close({ id: CONFIG })} />
         </Box>
+        <Text dimColor>↑↓ pick a setting · enter changes it · s saves · esc cancels</Text>
       </Box>
     )
   })

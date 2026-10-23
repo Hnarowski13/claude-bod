@@ -42,7 +42,7 @@ claude plugin install bod@bod
 - `/bod level easy|medium|hard`: one exercise per nudge, two, or three with more reps and longer holds. Easy by default.
 - `/bod every 5|10|15`: minutes of work between exercise nudges. 5 by default.
 - `/bod kind 5|10|15|30|45`: minutes of work between kindness nudges. 15 by default.
-- `/bod claudes 1-20`: how many Claudes may be open at once. 5 by default.
+- `/bod claudes 1-10`: how many Claudes may be open at once. 5 by default.
 - `/bod snooze 2|5|10|15`: how many minutes "not now" puts a nudge off for. 5 by default.
 - `/bod config`: every setting above in one form, each set to what it is now; change what you like and Save.
 - `/bod now`: an exercise right away, without waiting for the timer. The kindness timer carries on as they were.

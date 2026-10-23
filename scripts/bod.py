@@ -90,7 +90,7 @@ LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
 KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
-CLAUDES_CHOICES = range(1, 21)
+CLAUDES_CHOICES = range(1, 11)
 # How long "not now" puts a nudge off for.
 SNOOZE_CHOICES = (2, 5, 10, 15)
 DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5}
@@ -632,7 +632,7 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-20, snooze 2|5|10|15.")
+            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
