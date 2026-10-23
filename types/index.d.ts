@@ -34,8 +34,18 @@ export type Reply = View & {
   beep?: boolean
 }
 
+/** A setting `/bod config` shows a row for, as bod.py names it. */
+export type Setting = 'level' | 'every' | 'kind' | 'claudes' | 'snooze'
+
+/** The `/bod config` form while it's open: what's saved, what she's picked, what each may be. */
+export type Form = {
+  saved: Record<Setting, string>
+  picked: Record<Setting, string>
+  choices: Record<Setting, string[]>
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'bod': { view: View | null; now: number }
+    'bod': { view: View | null; now: number; form: Form | null }
   }
 }

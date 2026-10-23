@@ -14,10 +14,13 @@
 //
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
+//
+// `/bod config` opens the one pane it has: a small form above the prompt
+// with every setting, closed again on Save, Cancel or Esc.
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
-import type { Nudge, Reply, View } from '../types'
+import type { Form, Nudge, Reply, Setting, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
@@ -30,6 +33,7 @@ const CARD_CHROME_ROWS = 6
 
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
+const form = atom({ plugin: 'bod', key: 'form' } as const, null)
 
 type Command = 'tick' | 'now' | 'kindnow' | 'go' | 'done' | 'snooze' | 'beep'
 type Press = { go: () => void; done: () => void; snooze: () => void }
@@ -166,72 +170,59 @@ async function settings($: EngineInterface, args: string[]): Promise<string> {
   }
 }
 
-type Setting = 'level' | 'every' | 'kind' | 'claudes' | 'snooze'
-type Choices = { settings: Record<Setting, string | number>; choices: Record<Setting, (string | number)[]> }
+// `/bod config`: a small pane above the prompt with every setting on its own
+// row, each set to what it is now; Save sends bod.py only what changed.
+const CONFIG = 'bod-config'
+const ROWS: { key: Setting; label: string; unit: string }[] = [
+  { key: 'level', label: 'Level', unit: '' },
+  { key: 'every', label: 'Exercise every', unit: ' min' },
+  { key: 'kind', label: 'Kindness every', unit: ' min' },
+  { key: 'claudes', label: 'Claude cap', unit: '' },
+  { key: 'snooze', label: 'Snooze', unit: ' min' },
+]
+const LABEL_WIDTH = Math.max(...ROWS.map(row => row.label.length)) + 1
 
-// What /bod config asks, one setting at a time, in bod.py's order.
-const QUESTIONS: Record<Setting, { question: string; header: string; unit: string }> = {
-  level: { question: 'How much exercise per nudge?', header: 'Level', unit: '' },
-  every: { question: 'How many minutes of work between exercises?', header: 'Exercise', unit: ' minutes' },
-  kind: { question: 'How many minutes between kindness nudges?', header: 'Kindness', unit: ' minutes' },
-  claudes: { question: 'How many Claudes may be open at once?', header: 'Claude cap', unit: '' },
-  snooze: { question: 'How long should "not now" put a nudge off for?', header: 'Snooze', unit: ' minutes' },
-}
+// The pairs bod.py takes for what the form changed: ["kind", "30", ...].
+export const changes = (form: Form) =>
+  ROWS.flatMap(({ key }) => (form.picked[key] !== form.saved[key] ? [key, form.picked[key]] : []))
 
-// The dialog shows at most 4 options: the ones around the current value, which
-// is marked; the rest can be typed under Other.
-export const options = (choices: (string | number)[], current: string | number, unit: string) => {
-  const at = Math.max(0, choices.indexOf(current))
-  const start = Math.min(Math.max(0, at - 1), Math.max(0, choices.length - 4))
-
-  return choices.slice(start, start + 4).map((c) => `${c}${unit}${c === current ? ' (now)' : ''}`)
-}
-
-// A label back to the value bod.py takes: "10 minutes (now)" is 10, typed "Hard" is hard.
-export const answer = (label: string) => label.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-
-// `/bod config`: every setting, one question each, asked again until the answer
-// is one of its choices, then saved together at the end. Escape stops with nothing changed.
-async function config($: EngineInterface): Promise<string> {
+async function openConfig($: EngineInterface): Promise<string> {
   if (script === null) {
     return 'Claude Bod needs python3 to run.'
   }
 
-  let current: Choices
+  let current: { settings: Record<Setting, string | number>; choices: Record<Setting, (string | number)[]> }
 
   try {
-    current = JSON.parse((await $.process.run(['python3', script, 'choices'], { timeoutMs: 10000 })).stdout) as Choices
+    current = JSON.parse((await $.process.run(['python3', script, 'choices'], { timeoutMs: 10000 })).stdout)
   } catch {
     return 'Claude Bod could not read your settings.'
   }
 
-  const pairs: string[] = []
+  const saved = Object.fromEntries(ROWS.map(({ key }) => [key, String(current.settings[key])])) as Record<Setting, string>
+  const choices = Object.fromEntries(ROWS.map(({ key }) => [key, current.choices[key].map(String)])) as Record<Setting, string[]>
 
-  for (const key of Object.keys(QUESTIONS) as Setting[]) {
-    const { question, header, unit } = QUESTIONS[key]
-    const choices = current.choices[key]
-    const all = choices.length > 4 ? ` (${choices[0]} to ${choices[choices.length - 1]}, type any under Other)` : ''
-    const valid = choices.map(String)
-    let picked = ''
-    let retry = ''
+  await update($, form, () => ({ saved, picked: saved, choices }))
 
-    // A typed answer that isn't one of the choices asks the same question again.
-    while (!valid.includes(picked)) {
-      try {
-        picked = answer(await $.ui.ask(`${retry}${question}${all}`, { options: options(choices, current.settings[key], unit), header }))
-      } catch {
-        return 'Stopped. Nothing changed.'
-      }
+  const opened = await $.ui.open({ id: CONFIG, title: 'Claude Bod settings', focus: true, closeOnEscape: true, holdToasts: true, rows: ROWS.length + 3 })
 
-      retry = `"${picked}" isn't one of the choices (${valid.join(', ')}). `
-    }
-
-    if (picked !== String(current.settings[key])) {
-      pairs.push(key, picked)
-    }
+  if (opened.isPlaced) {
+    return 'Claude Bod settings: change what you like, then Save (Esc to cancel).'
   }
 
-  return pairs.length === 0 ? `Nothing changed. ${await settings($, ['settings'])}` : settings($, pairs)
+  // Nowhere to draw it: don't leave it waiting to pop up later.
+  await $.ui.close({ id: CONFIG })
+
+  return settings($, ['info'])
+}
+
+async function saveConfig($: EngineInterface) {
+  const shown = await read($, form)
+  const pairs = shown === null ? [] : changes(shown)
+
+  $.ui.log(pairs.length === 0 ? 'Nothing changed.' : await settings($, pairs))
+  await update($, form, () => null)
+  await $.ui.close({ id: CONFIG })
 }
 
 // Why this session may not send prompts right now, or null when it may. Too
@@ -415,7 +406,7 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts (config: all of them in turn)',
+      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts (config: all of them in one form)',
       argumentHint: '[config] [info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20] [snooze 2|5|10|15]',
     })
 
@@ -435,7 +426,7 @@ export const register: Register = on => {
     }
 
     if (setting === 'config') {
-      return { text: await config($) }
+      return { text: await openConfig($) }
     }
 
     const reply = kindNow ? await bod($, 'kindnow') : setting === 'now' ? await bod($, 'now') : null
@@ -449,7 +440,7 @@ export const register: Register = on => {
       return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
     }
 
-    return { text: `Claude Bod doesn't know "/bod ${args.join(' ')}". /bod info lists every setting and /bod config goes through them one by one.` }
+    return { text: `Claude Bod doesn't know "/bod ${args.join(' ')}". /bod info lists every setting and /bod config sets them all in one form.` }
   })
 
   // The lock: while an exercise nudge is on show, nothing she
@@ -492,6 +483,44 @@ export const register: Register = on => {
     return {
       drop: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)} first! ${how}, or "not now" for 5 minutes (click a button, or ctrl+x tab for the keys).`,
     }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: CONFIG }, async ($, e, next) => {
+    const shown = await read($, form)
+
+    if (shown === null) {
+      return next(e)
+    }
+
+    const elements = $.ui.resolve(e)
+
+    // The mobile app draws no Select yet.
+    if (!('Select' in elements)) {
+      return next(e)
+    }
+
+    const { Box, Button, Select, Text } = elements
+
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {ROWS.map(({ key, label, unit }, index) => (
+          <Box gap={1}>
+            <Text>{label.padEnd(LABEL_WIDTH)}</Text>
+            <Select
+              key={key}
+              options={shown.choices[key].map(value => ({ value, label: `${value}${unit}` }))}
+              value={shown.picked[key]}
+              autoFocus={index === 0 ? true : undefined}
+              onSelect={value => void update($, form, f => (f === null ? f : { ...f, picked: { ...f.picked, [key]: value } }))}
+            />
+          </Box>
+        ))}
+        <Box gap={1} marginTop={1}>
+          <Button key="save" label="Save" hotkey="s" variant="primary" onPress={() => void saveConfig($)} />
+          <Button key="cancel" label="Cancel" hotkey="c" onPress={() => void $.ui.close({ id: CONFIG })} />
+        </Box>
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
