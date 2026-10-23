@@ -34,6 +34,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // Wide enough for the engine to place a panel the mod opens on its own.
     isWide: false,
     isPanelOpen: false,
+    // Every pane the mod asked the engine to open, as it asked.
+    opens: [] as unknown[],
     isBroken: false,
     // claude-limit.py: what it prints, '' when this session is within the cap.
     limit: '',
@@ -68,8 +70,9 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     return { isFilled: true }
   })
-  on('ui.open', () => {
+  on('ui.open', (_$, e) => {
     world.isPanelOpen = true
+    world.opens.push(e)
 
     return { value: world.isWide ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }
   })
@@ -607,17 +610,18 @@ test('/bod config Save with nothing changed says so, and Cancel saves nothing', 
   await ui.unmount()
 })
 
-test("/bod config keeps the arrows on its rows, off Claude Code's own close mark and tabs", async ($, on) => {
+test('/bod config asks for the keys again once the command is done, so the arrows reach the form', async ($, on) => {
   const clock = mock.clock(on, { now: START })
-  fakeBod(on, clock, null)
-  on('ui.focus', () => ({}))
+  const world = fakeBod(on, clock, null)
+  world.isWide = true
   await $.session.start(SESSION)
 
-  const SITE = { component: 'Pane', requestId: 'bod-config' } as const
-  const PERSON = { kind: 'person' } as const
+  await $.command.run(BOD('config'))
+  expect(world.opens).toHaveLength(1)
 
-  expect(await $.ui.focus({ ...SITE, origin: PERSON })).toEqual({ deny: 'kept on the form' })
-  expect(await $.ui.focus({ ...SITE, origin: PERSON, plugin: 'bod', element: 'kind' })).toEqual({})
+  await clock.advance(300)
+  expect(world.opens).toHaveLength(2)
+  expect(world.opens[1]).toMatchObject({ id: 'bod-config', focus: true })
 })
 
 test('/bod config lists the settings instead when the form cannot be drawn', async ($, on) => {
