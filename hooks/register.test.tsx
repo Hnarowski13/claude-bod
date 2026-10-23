@@ -122,11 +122,18 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod is on easy.\n')
     }
 
+    if (command === 'choices') {
+      return ok(JSON.stringify({
+        settings: { level: 'easy', every: 5, kind: 15, claudes: 5, snooze: 5 },
+        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 20 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+      }))
+    }
+
     if (command === 'info') {
       return ok('Claude Bod settings:\n- Claude cap: 5\n')
     }
 
-    if (command === 'level' || command === 'every' || command === 'kind' || command === 'claudes') {
+    if (command === 'level' || command === 'every' || command === 'kind' || command === 'claudes' || (command === 'snooze' && e.argv.length > 3)) {
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
@@ -532,4 +539,48 @@ test('a kindness nudge done says "✅ Nice job!" with no time', async ($, on) =>
   await band.press({ key: 'done' })
 
   expect(world.logs).toEqual(['✅ Nice job!'])
+})
+
+test('/bod config asks about each setting in turn and saves only what changed', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  const asked: { question: string; header: string; options: string[] }[] = []
+  // What she picks, by header; Kindness is typed under Other.
+  const picks: Record<string, string> = { Level: 'hard', Exercise: '5 minutes (now)', Kindness: '45', 'Claude cap': '5 (now)', Snooze: '10 minutes' }
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const [q] = e.questions
+    asked.push({ question: q.question, header: q.header, options: q.options.map((o) => o.label) })
+
+    return { result: { questions: e.questions, answers: { [q.question]: picks[q.header] } } } as never
+  })
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod is on hard kind 45 snooze 10.' })
+  expect(world.commands).toContain('level hard kind 45 snooze 10')
+  expect(asked.map((a) => a.header)).toEqual(['Level', 'Exercise', 'Kindness', 'Claude cap', 'Snooze'])
+  expect(asked[0].options).toEqual(['easy (now)', 'medium', 'hard'])
+  expect(asked[2].options).toEqual(['10 minutes', '15 minutes (now)', '30 minutes', '45 minutes'])
+  expect(asked[3].options).toEqual(['4', '5 (now)', '6', '7'])
+  expect(asked[3].question).toBe('How many Claudes may be open at once? (1 to 20, type any under Other)')
+})
+
+test('/bod config stops with nothing changed when she presses Escape', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }))
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Stopped. Nothing changed.' })
+  expect(world.commands.filter((c) => c.startsWith('level') || c.startsWith('snooze '))).toEqual([])
+})
+
+test('/bod with something it does not know says so and points at info and config', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('can i set my snooze?'))).toMatchObject({
+    text: 'Claude Bod doesn\'t know "/bod can i set my snooze?". /bod info lists every setting and /bod config goes through them one by one.',
+  })
+  expect(await $.command.run(BOD('snooze 10'))).toMatchObject({ text: 'Claude Bod is on 10.' })
 })
