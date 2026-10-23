@@ -190,8 +190,8 @@ export const options = (choices: (string | number)[], current: string | number, 
 // A label back to the value bod.py takes: "10 minutes (now)" is 10, typed "Hard" is hard.
 export const answer = (label: string) => label.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
 
-// `/bod config`: every setting, one question each, saved together at the end
-// (bod.py checks them all before saving any). Escape stops with nothing changed.
+// `/bod config`: every setting, one question each, asked again until the answer
+// is one of its choices, then saved together at the end. Escape stops with nothing changed.
 async function config($: EngineInterface): Promise<string> {
   if (script === null) {
     return 'Claude Bod needs python3 to run.'
@@ -211,12 +211,19 @@ async function config($: EngineInterface): Promise<string> {
     const { question, header, unit } = QUESTIONS[key]
     const choices = current.choices[key]
     const all = choices.length > 4 ? ` (${choices[0]} to ${choices[choices.length - 1]}, type any under Other)` : ''
-    let picked: string
+    const valid = choices.map(String)
+    let picked = ''
+    let retry = ''
 
-    try {
-      picked = answer(await $.ui.ask(`${question}${all}`, { options: options(choices, current.settings[key], unit), header }))
-    } catch {
-      return 'Stopped. Nothing changed.'
+    // A typed answer that isn't one of the choices asks the same question again.
+    while (!valid.includes(picked)) {
+      try {
+        picked = answer(await $.ui.ask(`${retry}${question}${all}`, { options: options(choices, current.settings[key], unit), header }))
+      } catch {
+        return 'Stopped. Nothing changed.'
+      }
+
+      retry = `"${picked}" isn't one of the choices (${valid.join(', ')}). `
     }
 
     if (picked !== String(current.settings[key])) {
