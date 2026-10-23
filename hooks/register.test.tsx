@@ -564,6 +564,27 @@ test('/bod config asks about each setting in turn and saves only what changed', 
   expect(asked[3].question).toBe('How many Claudes may be open at once? (1 to 20, type any under Other)')
 })
 
+test('/bod config asks a question again when the typed answer is not one of its choices', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  const asked: string[] = []
+  // Level gets a typo first; everything else stays as it is.
+  const typed = ['extreme', 'medium']
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const [q] = e.questions
+    asked.push(q.question)
+    const label = q.header === 'Level' ? (typed.shift() ?? 'easy (now)') : (q.options.find((o) => o.label.endsWith('(now)'))?.label ?? '')
+
+    return { result: { questions: e.questions, answers: { [q.question]: label } } } as never
+  })
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('config'))).toMatchObject({ text: 'Claude Bod is on medium.' })
+  expect(world.commands).toContain('level medium')
+  expect(asked[1]).toBe('"extreme" isn\'t one of the choices (easy, medium, hard). How much exercise per nudge?')
+  expect(asked).toHaveLength(6)
+})
+
 test('/bod config stops with nothing changed when she presses Escape', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
