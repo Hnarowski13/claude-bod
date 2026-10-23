@@ -122,6 +122,10 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod is on easy.\n')
     }
 
+    if (command === 'info') {
+      return ok('Claude Bod settings:\n- Claude cap: 5\n')
+    }
+
     if (command === 'level' || command === 'every' || command === 'kind' || command === 'claudes') {
       world.commands.push(e.argv.slice(2).join(' '))
 
@@ -472,6 +476,7 @@ test('/bod level, /bod every and /bod claudes set Claude Bod, and /bod alone say
   expect(world.commands).toContain('level hard every 15')
   expect(await $.command.run(BOD('claudes 5'))).toMatchObject({ text: 'Claude Bod is on 5.' })
   expect(world.commands).toContain('claudes 5')
+  expect(await $.command.run(BOD('info'))).toMatchObject({ text: 'Claude Bod settings:\n- Claude cap: 5' })
   expect(world.isPanelOpen).toBe(false)
 
   expect(await $.command.run(BOD(''))).toMatchObject({ text: 'Claude Bod is on easy. /bod now for an exercise right away.' })

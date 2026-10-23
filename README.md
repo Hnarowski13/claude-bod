@@ -45,7 +45,7 @@ claude plugin install bod@bod
 - `/bod claudes 1-20`: how many Claudes may be open at once. 5 by default.
 - `/bod now`: an exercise right away, without waiting for the timer. The kindness timer carries on as they were.
 - `/bod kind now`: a kindness nudge right away, the same way.
-- `/bod settings` says what it's set to. Your choices are kept in `~/.claude/bod-settings.json`.
+- `/bod settings` says what it's set to; `/bod info` lists every setting, the fixed timers too. Your choices are kept in `~/.claude/bod-settings.json`.
 
 ## Tuning
 
