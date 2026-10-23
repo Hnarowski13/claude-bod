@@ -125,7 +125,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     if (command === 'choices') {
       return ok(JSON.stringify({
         settings: { level: 'easy', every: 5, kind: 15, claudes: 5, snooze: 5 },
-        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 20 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
       }))
     }
 
