@@ -150,8 +150,8 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
   }
 }
 
-// `/bod level hard`, `/bod every 10`, `/bod kind 30`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`: bod.py keeps the choice
-// and says what changed (`settings` says everything), or what to pick from.
+// `/bod level hard`, `/bod every 10`, `/bod kind 30`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`, `/bod info`: bod.py keeps the choice
+// and says what changed (`settings` sums it up, `info` lists every setting), or what to pick from.
 async function settings($: EngineInterface, args: string[]): Promise<string> {
   if (script === null) {
     return 'Claude Bod needs python3 to run.'
@@ -348,7 +348,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, and how many Claudes may be open',
-      argumentHint: '[now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20]',
+      argumentHint: '[info] [now] [kind now] [level easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-20]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -362,7 +362,7 @@ export const register: Register = on => {
     const [setting] = args
     const kindNow = setting === 'kind' && args[1] === 'now'
 
-    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes')) {
+    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes' || setting === 'info')) {
       return { text: await settings($, args) }
     }
 

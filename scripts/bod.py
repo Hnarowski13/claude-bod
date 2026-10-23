@@ -38,6 +38,8 @@ Entry points:
                   go in one call: bod.py level hard every 10, or
                   just bod.py level hard 10.
   bod.py settings What Claude Bod is set to, in a sentence.
+  bod.py info     Every setting, one per line: her choices and the fixed
+                  timers alike.
   bod.py status   What the work-check skill runs: hours today, the current
                   stretch without a break, and a verdict.
 
@@ -580,6 +582,24 @@ def describe(settings):
             f"something kind every {settings['kind']}, at most {settings['claudes']} Claudes open at once.")
 
 
+def info(settings):
+    """Every setting, one per line: her choices first, then the ones fixed in this file."""
+    count, _ = LEVELS[settings["level"]]
+    what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+    return "\n".join([
+        "Claude Bod settings:",
+        f"- Level: {settings['level']} ({what} per nudge) · /bod level easy|medium|hard",
+        f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))}",
+        f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))}",
+        f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
+        f"- Workflow check-in every {CHECK_IN_MINUTES} minutes",
+        f"- Snooze: {SNOOZE_MINUTES} minutes",
+        f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
+        f"- Daily cap: {DAILY_CAP_HOURS} hours, then a stop-for-the-day line",
+        f"- Take a break after {STRETCH_LIMIT_MINUTES} minutes without one (/work-check)",
+    ])
+
+
 def choose(args):
     """Set the level, the minutes, the kindness minutes and/or the Claude cap, given as pairs
     ("level hard every 10 kind 30 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
@@ -607,8 +627,9 @@ def choose(args):
             print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-20.")
             sys.exit(1)
         if value not in choices:
-            print(f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
-                  else f"Pick one of: {', '.join(str(c) for c in choices)}.")
+            pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
+                    else f"Pick one of: {', '.join(str(c) for c in choices)}.")
+            print(f"{pick} It's {settings[key]} now.")
             sys.exit(1)
         settings[key] = value
     save_settings(settings)
@@ -668,6 +689,8 @@ if __name__ == "__main__":
         choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))
+    elif mode == "info":
+        print(info(load_settings()))
     elif mode == "show" and sys.argv[2:] and sys.argv[2] in (*LAST, "plank"):
         show(sys.argv[2])
     else:
