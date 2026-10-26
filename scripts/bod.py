@@ -470,11 +470,18 @@ def right_now(state, now, settings=None, kind="move"):
     """`/bod now`: the next exercise on show at once, without waiting for its
     timer or touching the others; `/bod kind now` (kind="kind") does the same
     with a kindness nudge. A nudge already up stays; one put off with
-    "not now" comes straight back."""
+    "not now" comes straight back, unless she asked for the other kind: then
+    that one goes up and the put-off one is due again when its snooze ends."""
     pending = state["pending"]
     # Asking counts as being here: a tick won't drop it as stale.
     state["last_prompt"] = now
     state["quiet_until"] = None
+    snoozed = pending and pending["snoozed_until"] and now < pending["snoozed_until"]
+    if snoozed and pending["kind"] != kind:
+        settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
+        every = {"move": settings["every"], "kind": settings["kind"], "check": CHECK_IN_MINUTES}[pending["kind"]]
+        state[LAST[pending["kind"]]] = pending["snoozed_until"] - timedelta(minutes=every)
+        pending = None
     if pending:
         pending["snoozed_until"] = None
         return

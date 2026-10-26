@@ -326,6 +326,20 @@ class RightNow(unittest.TestCase):
         self.assertEqual(state["kinds"], 1)
 
 
+    def test_kind_now_with_an_exercise_put_off_shows_kindness_and_the_exercise_comes_back_on_time(self):
+        state = working(move=6, kind=1)
+        bod.advance(state, NOW, NOT_OVER, self.EASY)
+        bod.press(state, "snooze", NOW)
+        snoozed_until = state["pending"]["snoozed_until"]
+        bod.right_now(state, NOW + minutes(1), self.EASY, kind="kind")
+        self.assertEqual(state["pending"]["kind"], "kind")
+        bod.press(state, "done", NOW + minutes(2))
+        state["quiet_until"] = None
+        bod.advance(state, snoozed_until - minutes(1), NOT_OVER, self.EASY)
+        self.assertIsNone(state["pending"])
+        bod.advance(state, snoozed_until, NOT_OVER, self.EASY)
+        self.assertEqual(state["pending"]["kind"], "move")
+
 class Prompted(unittest.TestCase):
     def test_with_the_mod_running_claude_is_handed_nothing(self):
         state = working(move=50, cap=50, kind=50, prompt=1)
