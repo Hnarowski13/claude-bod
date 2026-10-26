@@ -88,6 +88,9 @@ STRETCH_LIMIT_MINUTES = 90
 QUIET_SECONDS = 60
 # The mod polls every few seconds; no tick for this long means it isn't running.
 MOD_ALIVE_SECONDS = 60
+# How often a tick adds up today's hours again for the status line. Button
+# presses never do: the scan takes most of a second and the band waits on it.
+WORKED_REFRESH_SECONDS = 60
 
 STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-state.json")
 # Her choices, kept apart from the state so a reset never loses them.
@@ -202,6 +205,8 @@ def load_state():
         state["stop"] = raw.get("stop") or None
         # {"count", "date"}: how many times she's said "not now" today.
         state["skips"] = raw.get("skips") or None
+        # {"seconds", "at"}: today's hours as last counted, and when.
+        state["worked"] = raw.get("worked") or None
         return state
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -217,6 +222,7 @@ def fresh_state(now, state=None):
     fresh["pending"] = None
     fresh["stop"] = state["stop"] if state else None
     fresh["skips"] = state["skips"] if state else None
+    fresh["worked"] = state["worked"] if state else None
     return fresh
 
 
@@ -233,6 +239,7 @@ def save_state(state):
     raw["pending"] = pending
     raw["stop"] = state["stop"]
     raw["skips"] = state["skips"]
+    raw["worked"] = state["worked"]
     tmp = STATE_PATH + ".tmp"
     with open(tmp, "w") as fh:
         json.dump(raw, fh)
@@ -594,6 +601,21 @@ def worked_so_far(now):
         return None
 
 
+def last_counted(state, now, button):
+    """Today's hours as last counted, when they'll do instead of a new scan:
+    always for a button press, and for a tick while they're under a minute old.
+    None when they need counting again (none yet, or from another day)."""
+    cached = state.get("worked")
+    if not cached:
+        return None
+    at = datetime.fromisoformat(cached["at"])
+    if at.date() != now.date():
+        return None
+    if button == "tick" and (now - at).total_seconds() >= WORKED_REFRESH_SECONDS:
+        return None
+    return timedelta(seconds=cached["seconds"])
+
+
 def mod(button):
     now = datetime.now().astimezone()
     with locked():
@@ -608,8 +630,18 @@ def mod(button):
             right_now(state, now, kind="kind")
         else:
             said = press(state, button, now)
+        worked = last_counted(state, now, button)
         save_state(state)
-    print(json.dumps({**view(state, now, worked=worked_so_far(now)), **said}))
+    if worked is None:
+        # Outside the lock, so a press in another session isn't kept waiting.
+        worked = worked_so_far(now)
+        if worked is not None:
+            with locked():
+                latest = load_state()
+                if latest is not None:
+                    latest["worked"] = {"seconds": int(worked.total_seconds()), "at": now.isoformat()}
+                    save_state(latest)
+    print(json.dumps({**view(state, now, worked=worked), **said}))
 
 
 def show(kind):
