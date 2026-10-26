@@ -650,6 +650,35 @@ class Worked(unittest.TestCase):
     def test_hours_that_could_not_be_counted_are_left_out(self):
         self.assertIsNone(bod.view(working(), NOW)["worked"])
 
+    def counted(self, ago, at=NOW):
+        state = working()
+        state["worked"] = {"seconds": 3600, "at": (at - timedelta(seconds=ago)).isoformat()}
+        return state
+
+    def test_nothing_counted_yet_means_a_scan(self):
+        self.assertIsNone(bod.last_counted(working(), NOW, "go"))
+
+    def test_a_button_press_uses_the_last_count_however_old(self):
+        self.assertEqual(bod.last_counted(self.counted(600), NOW, "snooze"), timedelta(hours=1))
+
+    def test_a_tick_uses_a_fresh_count(self):
+        self.assertEqual(bod.last_counted(self.counted(30), NOW, "tick"), timedelta(hours=1))
+
+    def test_a_tick_counts_again_after_a_minute(self):
+        self.assertIsNone(bod.last_counted(self.counted(60), NOW, "tick"))
+
+    def test_yesterdays_count_is_never_used(self):
+        self.assertIsNone(bod.last_counted(self.counted(0, at=NOW - timedelta(days=1)), NOW, "done"))
+
+    def test_the_count_survives_a_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old, bod.STATE_PATH = bod.STATE_PATH, os.path.join(tmp, "state.json")
+            try:
+                bod.save_state(self.counted(10))
+                self.assertEqual(bod.last_counted(bod.load_state(), NOW, "go"), timedelta(hours=1))
+            finally:
+                bod.STATE_PATH = old
+
 
 if __name__ == "__main__":
     unittest.main()
