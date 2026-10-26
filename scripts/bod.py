@@ -19,10 +19,11 @@ Entry points:
                   puts the next nudge on show once one is due and prints
                   what the band above the prompt and the status line should
                   show, as JSON, today's hours worked among it.
-  bod.py go | done | snooze | beep
-                  The mod's buttons: start the exercise timer, finish the
-                  nudge, put it off for her snooze minutes, and claim the sound
-                  at the end of a countdown (one session plays it, not all).
+  bod.py go | swap | done | snooze | beep
+                  The mod's buttons: start the exercise timer, trade the
+                  exercise for a different one, finish the nudge, put it
+                  off for her snooze minutes, and claim the sound at the
+                  end of a countdown (one session plays it, not all).
   bod.py now      `/bod now`: the next exercise on show right away, the
                   other timers left as they are.
   bod.py kindnow  `/bod kind now`: a kindness nudge on show right away,
@@ -290,6 +291,13 @@ def exercise(level="easy", picked=None):
     return text, seconds, count
 
 
+def swapped(text, level="easy", count=1):
+    """Another set of `count` exercises for the "swap" button, none of them
+    one that's in `text`, so she never gets the jumping jacks back."""
+    others = [e for e in EXERCISES if e[0].replace("{}", "").strip() not in text]
+    return exercise(level, random.sample(others, count))
+
+
 def move_nudge(level="easy"):
     return f"Movement break: {exercise(level)[0]}. Go, I'll wait."
 
@@ -453,6 +461,11 @@ def press(state, button, now):
     if button == "go":
         pending["started"] = pending["started"] or now
         pending["snoozed_until"] = None
+    elif button == "swap":
+        # Only an exercise not yet started; a running timer stays as it is.
+        if pending["kind"] == "move" and not pending["started"]:
+            text, seconds, count = swapped(pending["text"], load_settings()["level"], pending.get("count", 1))
+            pending.update(text=text, seconds=seconds, count=count, beeped=False)
     elif button == "snooze":
         pending["snoozed_until"] = now + timedelta(minutes=load_settings()["snooze"])
         pending["started"] = None
@@ -693,7 +706,7 @@ if __name__ == "__main__":
             hook()
         except Exception:
             pass
-    elif mode in ("tick", "now", "kindnow", "go", "done", "snooze", "beep") and not (mode == "snooze" and sys.argv[2:]):
+    elif mode in ("tick", "now", "kindnow", "go", "swap", "done", "snooze", "beep") and not (mode == "snooze" and sys.argv[2:]):
         mod(mode)
     elif mode in ("level", "every", "kind", "claudes", "snooze"):
         choose(sys.argv[1:])

@@ -157,7 +157,9 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     const said: { took?: number; beep?: boolean } = {}
     const { nudge } = world
 
-    if (command === 'go' && nudge) {
+    if (command === 'swap' && nudge && nudge.kind === 'move' && nudge.started === null) {
+      world.nudge = { ...nudge, text: '10 calf raises' }
+    } else if (command === 'go' && nudge) {
       world.nudge = { ...nudge, started: clock.now() }
     } else if (command === 'snooze') {
       world.nudge = null
@@ -311,6 +313,33 @@ test('no prompt is sent while a check-in is on show', async ($, on) => {
 
   expect(drop).toContain('🧭 Workflow check-in')
   expect(drop).toContain('Press done, or "not now"')
+})
+
+test('swap trades the exercise for a different one', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'move', text: '10 jumping jacks', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  await ui.press({ key: 'swap' })
+
+  expect(world.commands).toContain('swap')
+  expect(await ui.find({ text: /calf raises/ })).toBeDefined()
+  expect(await ui.find({ text: /jumping jacks/ })).toBeUndefined()
+})
+
+test('a kindness nudge and a running timer have no swap', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'kind', text: 'you are doing fine', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ key: 'swap' })).toBeUndefined()
+
+  world.nudge = { kind: 'move', text: '10 squats', seconds: null, started: START }
+  await clock.advance(1_000)
+
+  expect(await ui.find({ key: 'swap' })).toBeUndefined()
 })
 
 test('not now takes the nudge off the band', async ($, on) => {
