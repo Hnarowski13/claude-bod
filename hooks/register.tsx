@@ -423,7 +423,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
+      argumentHint: '[config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -436,8 +436,9 @@ export const register: Register = on => {
     const args = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const [setting] = args
     const kindNow = setting === 'kind' && args[1] === 'now'
+    const moveNow = setting === 'now' || (setting === 'move' && args[1] === 'now')
 
-    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
+    if (!kindNow && !moveNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
       return { text: await settings($, args) }
     }
 
@@ -445,14 +446,14 @@ export const register: Register = on => {
       return { text: await openConfig($) }
     }
 
-    const reply = kindNow ? await bod($, 'kindnow') : setting === 'now' ? await bod($, 'now') : null
+    const reply = kindNow ? await bod($, 'kindnow') : moveNow ? await bod($, 'now') : null
 
     if (reply?.nudge) {
       return { text: `${ICONS[reply.nudge.kind]} ${headline(reply.nudge)}` }
     }
 
     // `/bod` alone or `/bod settings` (or `/bod now` with nothing to show): what it's set to, and how to start now.
-    if (setting === undefined || setting === 'settings' || setting === 'now' || kindNow) {
+    if (setting === undefined || setting === 'settings' || moveNow || kindNow) {
       return { text: `${await settings($, ['settings'])} /bod now for an exercise right away.` }
     }
 
