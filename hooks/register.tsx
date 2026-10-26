@@ -156,7 +156,7 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
   }
 }
 
-// `/bod level hard`, `/bod every 10`, `/bod kind 30`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`, `/bod info`: bod.py keeps the choice
+// `/bod level hard`, `/bod move every 10`, `/bod kind every 30`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`, `/bod info`: bod.py keeps the choice
 // and says what changed (`settings` sums it up, `info` lists every setting), or what to pick from.
 async function settings($: EngineInterface, args: string[]): Promise<string> {
   if (script === null) {
@@ -423,7 +423,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
+      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
