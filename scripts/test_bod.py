@@ -514,8 +514,8 @@ class CommandLine(unittest.TestCase):
                         "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
         self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|easy|medium|hard", lines)
-        self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15 · /bod move off", lines)
-        self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45 · /bod kind off", lines)
+        self.assertIn("- Exercise every 10 minutes of work · /bod move every 5|10|15 · /bod move off", lines)
+        self.assertIn("- Something kind every 30 minutes · /bod kind every 5|10|15|30|45 · /bod kind off", lines)
         self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)
         self.assertIn(f"- Daily cap: {bod.DAILY_CAP_HOURS} hours, then a stop-for-the-day line", lines)
         self.assertEqual(bod.load_settings()["claudes"], 3)
@@ -625,6 +625,21 @@ class SwitchedOff(unittest.TestCase):
             # The minutes are still minutes.
             self.assertEqual(run("kind", "30"), "Something kind is now every 30 minutes.")
             self.assertEqual(run("move", "maybe"), "Pick one of: on, off. It's on now.")
+
+    def test_minutes_said_the_natural_way(self):
+        run = lambda *args: subprocess.run(  # noqa: E731
+            [sys.executable, os.path.join(HERE, "bod.py"), *args], capture_output=True, text=True
+        ).stdout.strip()
+        self.assertEqual(run("move", "every", "10"), "Your exercises are now every 10 minutes.")
+        self.assertEqual(run("move", "15"), "Your exercises are now every 15 minutes.")
+        self.assertEqual(run("kind", "every", "30"), "Something kind is now every 30 minutes.")
+        self.assertEqual(run("level", "hard", "move", "every", "5", "kind", "every", "45"),
+                         "Your level is now hard: 3 exercises with more reps per nudge. "
+                         "Your exercises are now every 5 minutes. Something kind is now every 45 minutes.")
+        self.assertEqual(run("move", "every", "7"), "Pick one of: 5, 10, 15. It's 5 now.")
+        # The old way still works.
+        self.assertEqual(run("every", "10"), "Your exercises are now every 10 minutes.")
+        self.assertEqual(run("kind", "15"), "Something kind is now every 15 minutes.")
 
 
 class Worked(unittest.TestCase):

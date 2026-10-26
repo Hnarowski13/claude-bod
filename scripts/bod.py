@@ -40,6 +40,8 @@ Entry points:
                   How many minutes of work between exercise nudges. Both can
                   go in one call: bod.py level hard every 10, or
                   just bod.py level hard 10.
+  bod.py move every 5 | 10 | 15, kind every 5 | 10 | 15 | 30 | 45
+                  The same minutes said the natural way (`move 10` too).
   bod.py move on | off, kind on | off, check on | off
                   Exercises, kindness nudges or the workflow check-in on
                   or off, each on its own (on by default).
@@ -649,9 +651,9 @@ def info(settings):
     return "\n".join([
         "Claude Bod settings (/bod config to change them in one form):",
         f"- Level: {settings['level']} ({what} per nudge) · /bod level gentle|easy|medium|hard",
-        (f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))} · /bod move off"
+        (f"- Exercise every {settings['every']} minutes of work · /bod move every {'|'.join(map(str, EVERY_CHOICES))} · /bod move off"
          if is_on(settings, "move") else "- Exercises: off · /bod move on"),
-        (f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))} · /bod kind off"
+        (f"- Something kind every {settings['kind']} minutes · /bod kind every {'|'.join(map(str, KIND_CHOICES))} · /bod kind off"
          if is_on(settings, "kind") else "- Kindness: off · /bod kind on"),
         f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
         (f"- Workflow check-in every {CHECK_IN_MINUTES} minutes · /bod check off"
@@ -665,10 +667,11 @@ def info(settings):
 
 def choose(args):
     """Set the level, the minutes, the kindness minutes, the Claude cap and/or switch a nudge on or off, given as
-    pairs ("level hard every 10 kind 30 claudes 5 check off", or just "level hard 10"); prints only what changed. Nothing is
+    pairs ("level hard move every 10 kind every 30 claudes 5 check off", or just "level hard 10"); prints only what changed. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
     before = dict(settings)
+    args = natural(args)
     # A bare number is the minutes: "level hard 10" means "level hard every 10".
     args = [part for i, arg in enumerate(args)
             for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes", "snooze")) else [arg])]
@@ -695,8 +698,8 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level gentle|easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15, "
-                  "move on|off, kind on|off, check on|off.")
+            print("Use: level gentle|easy|medium|hard, move every 5|10|15, kind every 5|10|15|30|45, claudes 1-10, "
+                  "snooze 2|5|10|15, move on|off, kind on|off, check on|off.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -708,6 +711,26 @@ def choose(args):
     save_settings(settings)
     drop_switched_off(settings)
     print(" ".join(confirm(key, settings, before) for key in dict.fromkeys(keys)))
+
+
+def natural(args):
+    """The words she'd say, as the pairs choose() takes: "move every 10" and
+    "move 10" are "every 10", "kind every 30" is "kind 30"."""
+    out = []
+    i = 0
+    while i < len(args):
+        word = args[i]
+        after = args[i + 1] if i + 1 < len(args) else ""
+        if word in ("move", "kind") and after == "every":
+            out.append("every" if word == "move" else "kind")
+            i += 2
+        elif word == "move" and after.isdigit():
+            out.append("every")
+            i += 1
+        else:
+            out.append(word)
+            i += 1
+    return out
 
 
 def drop_switched_off(settings):
