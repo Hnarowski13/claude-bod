@@ -166,12 +166,12 @@ class Press(unittest.TestCase):
         self.assertEqual(state["moves"], 0)
 
     def test_swap_never_brings_back_an_exercise_from_the_set(self):
-        text = "10 jumping jacks, then 10 squats"
+        text = "10 jumping jacks, then a 20 second plank"
         for _ in range(50):
             swapped, _, count = bod.swapped(text, "medium", 2)
             self.assertEqual(count, 2)
             self.assertNotIn("jumping jacks", swapped)
-            self.assertNotIn("squats", swapped)
+            self.assertNotIn("plank", swapped)
 
     def test_swap_leaves_a_started_exercise_alone(self):
         state = self.shown(move=11)

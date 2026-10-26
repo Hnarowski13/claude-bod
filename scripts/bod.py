@@ -294,7 +294,7 @@ def exercise(level="easy", picked=None):
 def swapped(text, level="easy", count=1):
     """Another set of `count` exercises for the "swap" button, none of them
     one that's in `text`, so she never gets the jumping jacks back."""
-    others = [e for e in EXERCISES if e[0].replace("{}", "").strip() not in text]
+    others = [e for e in EXERCISES if e[0].split("{}")[-1].strip() not in text]
     return exercise(level, random.sample(others, count))
 
 
