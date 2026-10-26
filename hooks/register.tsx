@@ -35,8 +35,8 @@ const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
 const form = atom({ plugin: 'bod', key: 'form' } as const, null)
 
-type Command = 'tick' | 'now' | 'kindnow' | 'go' | 'done' | 'snooze' | 'beep'
-type Press = { go: () => void; done: () => void; snooze: () => void }
+type Command = 'tick' | 'now' | 'kindnow' | 'go' | 'swap' | 'done' | 'snooze' | 'beep'
+type Press = { go: () => void; swap: () => void; done: () => void; snooze: () => void }
 // The elements a nudge is drawn with; every surface's table has them.
 type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
 
@@ -360,6 +360,7 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
       ) : (
         <Box gap={1}>
           <Button key="go" label="go! ▶" hotkey="g" variant="primary" onPress={press.go} />
+          <Button key="swap" label="swap ⇄" hotkey="w" onPress={press.swap} />
           <Button key="snooze" label="not now (5 min)" hotkey="n" onPress={press.snooze} />
         </Box>
       )}
@@ -395,6 +396,7 @@ function line({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
       ) : (
         <Button key="go" label="go! ▶" hotkey="g" variant="primary" onPress={press.go} />
       )}
+      {nudge.kind === 'move' ? <Button key="swap" label="swap ⇄" hotkey="w" onPress={press.swap} /> : null}
       <Button key="snooze" label="not now" hotkey="n" onPress={press.snooze} />
     </Box>
   )
@@ -552,7 +554,7 @@ export const register: Register = on => {
 
     // A nudge that locks gets the box when the band has the rows for it.
     if (nudge !== null) {
-      const press: Press = { go: () => void bod($, 'go'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
+      const press: Press = { go: () => void bod($, 'go'), swap: () => void bod($, 'swap'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
       const room = e.props.maxRows - rows.length
 
       rows.push((locks(nudge) ? card(elements, nudge, at, press, room) : null) ?? line(elements, nudge, at, press))

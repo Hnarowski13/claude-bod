@@ -156,6 +156,29 @@ class Press(unittest.TestCase):
         self.assertEqual(bod.view(state, NOW + minutes(5))["nudge"]["text"], "5 push ups")
         self.assertEqual(state["moves"], 0)
 
+    def test_swap_trades_the_exercise_for_one_not_already_on_show(self):
+        state = self.shown(move=11)
+        with mock.patch.object(bod.random, "sample", lambda pool, count: pool[:count]):
+            bod.press(state, "swap", NOW)
+        self.assertEqual(state["pending"]["text"], "10 jumping jacks")
+        self.assertEqual(state["pending"]["count"], 1)
+        self.assertIsNone(state["pending"]["started"])
+        self.assertEqual(state["moves"], 0)
+
+    def test_swap_never_brings_back_an_exercise_from_the_set(self):
+        text = "10 jumping jacks, then a 20 second plank"
+        for _ in range(50):
+            swapped, _, count = bod.swapped(text, "medium", 2)
+            self.assertEqual(count, 2)
+            self.assertNotIn("jumping jacks", swapped)
+            self.assertNotIn("plank", swapped)
+
+    def test_swap_leaves_a_started_exercise_alone(self):
+        state = self.shown(move=11)
+        bod.press(state, "go", NOW)
+        bod.press(state, "swap", NOW)
+        self.assertEqual(state["pending"]["text"], "5 push ups")
+
     def test_only_the_first_session_to_ask_gets_to_beep(self):
         state = self.shown(move=11)
         state["pending"]["seconds"] = 20
