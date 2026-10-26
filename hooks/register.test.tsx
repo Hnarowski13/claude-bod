@@ -127,8 +127,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     if (command === 'choices') {
       return ok(JSON.stringify({
-        settings: { level: 'easy', every: 5, kind: 15, claudes: 5, snooze: 5 },
-        choices: { level: ['gentle', 'easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+        settings: { level: 'easy', move: 'on', every: 5, kindness: 'on', kind: 15, check: 'on', claudes: 5, snooze: 5 },
+        choices: { level: ['gentle', 'easy', 'medium', 'hard'], move: ['on', 'off'], every: [5, 10, 15], kindness: ['on', 'off'], kind: [5, 10, 15, 30, 45], check: ['on', 'off'], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
       }))
     }
 
@@ -136,7 +136,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod settings:\n- Claude cap: 5\n')
     }
 
-    if (command === 'level' || command === 'every' || command === 'kind' || command === 'claudes' || (command === 'snooze' && e.argv.length > 3)) {
+    if (command === 'level' || command === 'every' || command === 'kind' || command === 'move' || command === 'check' || command === 'claudes' || (command === 'snooze' && e.argv.length > 3)) {
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
@@ -502,7 +502,7 @@ test('every prompt is recorded as work', async ($, on) => {
   expect(world.commands).toContain('hook')
 })
 
-test('/bod level, /bod every and /bod claudes set Claude Bod, and /bod alone says what it is set to', async ($, on) => {
+test('/bod level, /bod every, /bod claudes and the on/off switches set Claude Bod, and /bod alone says what it is set to', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
@@ -515,6 +515,10 @@ test('/bod level, /bod every and /bod claudes set Claude Bod, and /bod alone say
   expect(world.commands).toContain('level hard every 15')
   expect(await $.command.run(BOD('claudes 5'))).toMatchObject({ text: 'Claude Bod is on 5.' })
   expect(world.commands).toContain('claudes 5')
+  expect(await $.command.run(BOD('move off'))).toMatchObject({ text: 'Claude Bod is on off.' })
+  expect(world.commands).toContain('move off')
+  expect(await $.command.run(BOD('check off'))).toMatchObject({ text: 'Claude Bod is on off.' })
+  expect(world.commands).toContain('check off')
   expect(await $.command.run(BOD('info'))).toMatchObject({ text: 'Claude Bod settings:\n- Claude cap: 5' })
   expect(world.isPanelOpen).toBe(false)
 
@@ -611,10 +615,13 @@ test('/bod config opens one form with every setting at its current value, and Sa
   await ui.press({ key: 'level' })
   expect((await ui.find({ type: 'Button', key: 'kind' }))?.text).toMatch(/45 min \(was 15 min\)$/)
   expect((await ui.find({ type: 'Button', key: 'level' }))?.text).toMatch(/easy$/)
+  // Each nudge has its own on/off row.
+  await ui.press({ key: 'check' })
+  expect((await ui.find({ type: 'Button', key: 'check' }))?.text).toMatch(/^Check-in +off \(was on\)$/)
   await ui.press({ key: 'save' })
 
-  expect(world.commands).toContain('kind 45 snooze 10')
-  expect(world.logs).toEqual(['Claude Bod is on 45 snooze 10.'])
+  expect(world.commands).toContain('kind 45 check off snooze 10')
+  expect(world.logs).toEqual(['Claude Bod is on 45 check off snooze 10.'])
   expect(world.isPanelOpen).toBe(false)
   await ui.unmount()
 })

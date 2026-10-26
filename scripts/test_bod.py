@@ -418,14 +418,14 @@ class Levels(unittest.TestCase):
 
     def test_done_counts_every_exercise_in_the_set(self):
         state = working(move=6)
-        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "every": 5, "kind": 15, "claudes": 5, "snooze": 5})
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
         bod.press(state, "done", NOW)
         self.assertEqual(state["moves"], 3)
 
     def test_a_bad_settings_file_falls_back_to_the_defaults(self):
         with open(bod.SETTINGS_PATH, "w") as fh:
             fh.write('{"level": "extreme", "every": 7, "kind": 15}')
-        self.assertEqual(bod.load_settings(), {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "easy", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
 
 
 class CommandLine(unittest.TestCase):
@@ -475,18 +475,18 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("level", "gentle").stdout.strip(), "Your level is now gentle: one gentle movement per nudge.")
         self.assertEqual(run("level", "hard").stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge.")
         self.assertEqual(run("every", "15").stdout.strip(), "Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
         self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, something kind every 15, at most 5 Claudes open at once.")
         both = run("level", "medium", "every", "10")
         self.assertEqual(both.stdout.strip(), "Your level is now medium: 2 exercises per nudge. Your exercises are now every 10 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
         short = run("level", "hard", "15")
         self.assertEqual(short.stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge. Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
         run("level", "medium", "every", "10")
         half_bad = run("level", "easy", "every", "7")
         self.assertEqual(half_bad.returncode, 1)
-        self.assertEqual(bod.load_settings(), {"level": "medium", "every": 10, "kind": 15, "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
         bad = run("every", "7")
         self.assertEqual(bad.returncode, 1)
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15. It's 10 now.")
@@ -507,13 +507,15 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("snooze", "10").stdout.strip(), "Not now puts a nudge off for 10 minutes.")
         self.assertEqual(run("snooze", "7").stdout.strip(), "Pick one of: 2, 5, 10, 15. It's 10 now.")
         self.assertEqual(json.loads(run("choices").stdout), {
-            "settings": {"level": "medium", "every": 10, "kind": 30, "claudes": 3, "snooze": 10},
-            "choices": {"level": ["gentle", "easy", "medium", "hard"], "every": [5, 10, 15], "kind": [5, 10, 15, 30, 45],
+            "settings": {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 30, "check": "on",
+                         "claudes": 3, "snooze": 10},
+            "choices": {"level": ["gentle", "easy", "medium", "hard"], "move": ["on", "off"], "every": [5, 10, 15],
+                        "kindness": ["on", "off"], "kind": [5, 10, 15, 30, 45], "check": ["on", "off"],
                         "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
         self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|easy|medium|hard", lines)
-        self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15", lines)
-        self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45", lines)
+        self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15 · /bod move off", lines)
+        self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45 · /bod kind off", lines)
         self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)
         self.assertIn(f"- Daily cap: {bod.DAILY_CAP_HOURS} hours, then a stop-for-the-day line", lines)
         self.assertEqual(bod.load_settings()["claudes"], 3)
@@ -562,6 +564,67 @@ class CheckIn(unittest.TestCase):
         state, nudges = bod.prompted(state, NOW)
         self.assertIn(f"Workflow check-in: {bod.CHECK_IN_QUESTION} Try this: {bod.FOG_FIXES[0]}.", nudges)
         self.assertEqual(state["checks"], 1)
+
+
+class SwitchedOff(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(bod.SETTINGS_PATH):
+            os.remove(bod.SETTINGS_PATH)
+
+    def tearDown(self):
+        self.setUp()
+
+    def test_a_nudge_switched_off_never_goes_up_and_the_others_still_do(self):
+        off = {"move": "off", "kindness": "off", "check": "off"}
+        state = working(move=60, kind=60, check=60)
+        bod.advance(state, NOW, NOT_OVER, off)
+        self.assertIsNone(state["pending"])
+        bod.advance(state, NOW, NOT_OVER, {**off, "kindness": "on"})
+        self.assertEqual(state["pending"]["kind"], "kind")
+        state = working(move=60, check=60)
+        bod.advance(state, NOW, NOT_OVER, {"check": "off"})
+        self.assertEqual(state["pending"]["kind"], "move")
+
+    def test_exercises_off_leaves_no_countdown(self):
+        self.assertEqual(bod.view(working(), NOW, {"move": "off"})["next"], {})
+
+    def test_without_the_mod_claude_is_handed_none_of_them(self):
+        bod.save_settings({**bod.DEFAULT_SETTINGS, "move": "off", "kindness": "off", "check": "off"})
+        state, nudges = bod.prompted(working(move=60, kind=60, check=60, prompt=1), NOW)
+        self.assertEqual(nudges, [])
+
+    def test_now_still_puts_an_exercise_up(self):
+        state = working()
+        bod.right_now(state, NOW, {**bod.DEFAULT_SETTINGS, "move": "off"})
+        self.assertEqual(state["pending"]["kind"], "move")
+
+    def test_off_is_kept_said_and_takes_down_an_unstarted_nudge_of_that_kind(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json")}
+            run = lambda *args: subprocess.run(  # noqa: E731
+                [sys.executable, os.path.join(HERE, "bod.py"), *args], env=env, capture_output=True, text=True
+            ).stdout.strip()
+            self.assertEqual(json.loads(run("show", "kind"))["nudge"]["kind"], "kind")
+            self.assertEqual(run("move", "off"), "Exercises are off.")
+            self.assertEqual(json.loads(run("tick"))["nudge"]["kind"], "kind")
+            self.assertEqual(run("kind", "off", "check", "off"),
+                             "Kindness nudges are off. The workflow check-in is off.")
+            self.assertIsNone(json.loads(run("tick"))["nudge"])
+            self.assertEqual(bod.load_settings(), {**bod.DEFAULT_SETTINGS, "move": "off", "kindness": "off", "check": "off"})
+            self.assertEqual(run("settings"), "Claude Bod is on easy: exercises off, kindness off, workflow check-in off, "
+                                              "at most 5 Claudes open at once.")
+            lines = run("info").splitlines()
+            self.assertIn("- Exercises: off · /bod move on", lines)
+            self.assertIn("- Kindness: off · /bod kind on", lines)
+            self.assertIn("- Workflow check-in: off · /bod check on", lines)
+            # Trying the band out still works with it off.
+            self.assertEqual(json.loads(run("show", "check"))["nudge"]["kind"], "check")
+            self.assertEqual(run("check", "on"), "The workflow check-in is on, every 45 minutes.")
+            self.assertEqual(run("move", "on"), "Exercises are on, every 5 minutes.")
+            self.assertEqual(run("kind", "on"), "Kindness nudges are on, every 15 minutes.")
+            # The minutes are still minutes.
+            self.assertEqual(run("kind", "30"), "Something kind is now every 30 minutes.")
+            self.assertEqual(run("move", "maybe"), "Pick one of: on, off. It's on now.")
 
 
 class Worked(unittest.TestCase):

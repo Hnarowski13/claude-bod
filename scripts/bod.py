@@ -6,7 +6,8 @@ Two nudges on two separate timers: a short exercise every 5, 10 or 15
 minutes of work (her pick, 5 by default), and something kind to herself
 every 5, 10, 15, 30 or 45 (her pick too, 15 by default). Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
-(too many Claudes, lost track of what each one is doing). Every CAP_CHECK_MINUTES it checks today's hours, and once
+(too many Claudes, lost track of what each one is doing). Each of the three
+can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
 
 Entry points:
@@ -39,6 +40,9 @@ Entry points:
                   How many minutes of work between exercise nudges. Both can
                   go in one call: bod.py level hard every 10, or
                   just bod.py level hard 10.
+  bod.py move on | off, kind on | off, check on | off
+                  Exercises, kindness nudges or the workflow check-in on
+                  or off, each on its own (on by default).
   bod.py snooze 2 | 5 | 10 | 15
                   How many minutes "not now" puts a nudge off for (bare
                   `snooze` is the button itself).
@@ -95,10 +99,14 @@ KIND_CHOICES = (5, 10, 15, 30, 45)
 CLAUDES_CHOICES = range(1, 11)
 # How long "not now" puts a nudge off for.
 SNOOZE_CHOICES = (2, 5, 10, 15)
-DEFAULT_SETTINGS = {"level": "easy", "every": 5, "kind": 15, "claudes": 5, "snooze": 5}
+SWITCH_CHOICES = ("on", "off")
+# The setting that switches each nudge on or off ("kind on|off" sets kindness).
+SWITCH = {"move": "move", "kind": "kindness", "check": "check"}
+DEFAULT_SETTINGS = {"level": "easy", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on",
+                    "claudes": 5, "snooze": 5}
 # What each setting may be, in the order /bod config shows them.
-CHOICES = {"level": tuple(LEVELS), "every": EVERY_CHOICES, "kind": KIND_CHOICES, "claudes": CLAUDES_CHOICES,
-           "snooze": SNOOZE_CHOICES}
+CHOICES = {"level": tuple(LEVELS), "move": SWITCH_CHOICES, "every": EVERY_CHOICES, "kindness": SWITCH_CHOICES,
+           "kind": KIND_CHOICES, "check": SWITCH_CHOICES, "claudes": CLAUDES_CHOICES, "snooze": SNOOZE_CHOICES}
 
 # (what to do, with {} for how many, how many on easy, whether it's seconds
 # to count down from rather than reps)
@@ -350,6 +358,10 @@ def due(state, key, minutes, now):
     return now - state[key] >= timedelta(minutes=minutes)
 
 
+def is_on(settings, kind):
+    return settings[SWITCH[kind]] == "on"
+
+
 def mod_alive(state, now):
     return bool(state["mod_seen"]) and now - state["mod_seen"] < timedelta(seconds=MOD_ALIVE_SECONDS)
 
@@ -367,7 +379,7 @@ def prompted(state, now):
 
     settings = load_settings()
     nudges = []
-    if due(state, "last_move", settings["every"], now):
+    if is_on(settings, "move") and due(state, "last_move", settings["every"], now):
         text, _, count = exercise(settings["level"])
         nudges.append(f"Movement break: {text}. Go, I'll wait.")
         state["last_move"] = now
@@ -377,11 +389,11 @@ def prompted(state, now):
         if over_cap(worked):
             nudges.append(stop_nudge(worked))
         state["last_cap"] = now
-    if due(state, "last_kind", settings["kind"], now):
+    if is_on(settings, "kind") and due(state, "last_kind", settings["kind"], now):
         nudges.append(kind_nudge(state["kinds"]))
         state["last_kind"] = now
         state["kinds"] += 1
-    if due(state, "last_check", CHECK_IN_MINUTES, now):
+    if is_on(settings, "check") and due(state, "last_check", CHECK_IN_MINUTES, now):
         nudges.append(check_nudge(state["checks"]))
         state["last_check"] = now
         state["checks"] += 1
@@ -415,7 +427,7 @@ def hook():
 
 def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
     """Put the next nudge on show once one is due and nothing else is showing."""
-    settings = settings or load_settings()
+    settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
     if state["stop"] and state["stop"]["date"] != now.date().isoformat():
         state["stop"] = None
     pending = state["pending"]
@@ -434,12 +446,12 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
             state["stop"] = {"text": stop_nudge(worked), "date": now.date().isoformat()}
         state["last_cap"] = now
     # The check-in first: it's the rare one, and the exercise is never far behind.
-    if due(state, "last_check", CHECK_IN_MINUTES, now):
+    if is_on(settings, "check") and due(state, "last_check", CHECK_IN_MINUTES, now):
         pending = {"kind": "check", "text": fog_fix(state["checks"]), "seconds": None}
-    elif due(state, "last_move", settings["every"], now):
+    elif is_on(settings, "move") and due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
-    elif due(state, "last_kind", settings["kind"], now):
+    elif is_on(settings, "kind") and due(state, "last_kind", settings["kind"], now):
         pending = {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None}
     if pending:
         state["pending"] = {**pending, "started": None, "snoozed_until": None, "beeped": False}
@@ -529,7 +541,9 @@ def upcoming(state, now, settings=None):
         if not (snoozed and now < snoozed):
             return None
         earliest = snoozed
-    settings = settings or load_settings()
+    settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
+    if not is_on(settings, "move"):
+        return {}
     return {
         "move": max(state["last_move"] + timedelta(minutes=settings["every"]), earliest),
     }
@@ -562,7 +576,7 @@ def view(state, now, settings=None, worked=None):
         "now": ms(now),
         "nudge": nudge,
         "stop": state["stop"]["text"] if state["stop"] else None,
-        "next": {kind: ms(when) for kind, when in due_at.items()} if due_at else None,
+        "next": {kind: ms(when) for kind, when in due_at.items()} if due_at is not None else None,
         "paused": paused,
         "worked": int(worked.total_seconds()) if worked is not None else None,
         "skips": skips_today(state, now),
@@ -603,7 +617,8 @@ def show(kind):
         plank = kind == "plank"
         kind = "move" if plank else kind
         state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES))
-        advance(state, now, lambda now: timedelta(0))
+        # Shown even when it's switched off: this is for trying the band out.
+        advance(state, now, lambda now: timedelta(0), {**load_settings(), SWITCH[kind]: "on"})
         if plank:
             # A lone plank, to see the countdown.
             text, seconds, count = exercise("easy", [next(e for e in EXERCISES if "plank" in e[0])])
@@ -622,8 +637,10 @@ def per_nudge(level):
 
 def describe(settings):
     what = per_nudge(settings["level"])
-    return (f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes, "
-            f"something kind every {settings['kind']}, at most {settings['claudes']} Claudes open at once.")
+    move = f"{what} every {settings['every']} minutes" if is_on(settings, "move") else "exercises off"
+    kind = f"something kind every {settings['kind']}" if is_on(settings, "kind") else "kindness off"
+    check = "" if is_on(settings, "check") else ", workflow check-in off"
+    return f"Claude Bod is on {settings['level']}: {move}, {kind}{check}, at most {settings['claudes']} Claudes open at once."
 
 
 def info(settings):
@@ -632,10 +649,13 @@ def info(settings):
     return "\n".join([
         "Claude Bod settings (/bod config to change them in one form):",
         f"- Level: {settings['level']} ({what} per nudge) · /bod level gentle|easy|medium|hard",
-        f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))}",
-        f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))}",
+        (f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))} · /bod move off"
+         if is_on(settings, "move") else "- Exercises: off · /bod move on"),
+        (f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))} · /bod kind off"
+         if is_on(settings, "kind") else "- Kindness: off · /bod kind on"),
         f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
-        f"- Workflow check-in every {CHECK_IN_MINUTES} minutes",
+        (f"- Workflow check-in every {CHECK_IN_MINUTES} minutes · /bod check off"
+         if is_on(settings, "check") else "- Workflow check-in: off · /bod check on"),
         f"- Snooze: {settings['snooze']} minutes · /bod snooze {'|'.join(map(str, SNOOZE_CHOICES))}",
         f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
         f"- Daily cap: {DAILY_CAP_HOURS} hours, then a stop-for-the-day line",
@@ -644,8 +664,8 @@ def info(settings):
 
 
 def choose(args):
-    """Set the level, the minutes, the kindness minutes and/or the Claude cap, given as pairs
-    ("level hard every 10 kind 30 claudes 5", or just "level hard 10"); prints only what changed. Nothing is
+    """Set the level, the minutes, the kindness minutes, the Claude cap and/or switch a nudge on or off, given as
+    pairs ("level hard every 10 kind 30 claudes 5 check off", or just "level hard 10"); prints only what changed. Nothing is
     saved unless every pair is valid."""
     settings = load_settings()
     before = dict(settings)
@@ -654,8 +674,13 @@ def choose(args):
             for part in (["every", arg] if arg.isdigit() and (i == 0 or args[i - 1] not in ("every", "kind", "claudes", "snooze")) else [arg])]
     if not args or len(args) % 2:
         args = [*args, ""]
+    keys = []
     for key, value in zip(args[::2], args[1::2]):
-        if key == "every":
+        if key == "kind" and value in SWITCH_CHOICES:
+            key = SWITCH["kind"]
+        if key in ("move", "kindness", "check"):
+            choices = SWITCH_CHOICES
+        elif key == "every":
             value = int(value) if value.isdigit() else None
             choices = EVERY_CHOICES
         elif key == "kind":
@@ -670,7 +695,8 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level gentle|easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15.")
+            print("Use: level gentle|easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15, "
+                  "move on|off, kind on|off, check on|off.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -678,8 +704,20 @@ def choose(args):
             print(f"{pick} It's {settings[key]} now.")
             sys.exit(1)
         settings[key] = value
+        keys.append(key)
     save_settings(settings)
-    print(" ".join(confirm(key, settings, before) for key in dict.fromkeys(args[::2])))
+    drop_switched_off(settings)
+    print(" ".join(confirm(key, settings, before) for key in dict.fromkeys(keys)))
+
+
+def drop_switched_off(settings):
+    """A nudge on show whose kind was just switched off goes, unless she's already doing it."""
+    with locked():
+        state = load_state()
+        pending = state and state["pending"]
+        if pending and not pending["started"] and not is_on(settings, pending["kind"]):
+            state["pending"] = None
+            save_state(state)
 
 
 def confirm(key, settings, before):
@@ -691,6 +729,14 @@ def confirm(key, settings, before):
         return f"Your exercises are now every {settings['every']} minutes."
     if key == "kind":
         return f"Something kind is now every {settings['kind']} minutes."
+    if key == "move":
+        return f"Exercises are on, every {settings['every']} minutes." if is_on(settings, "move") else "Exercises are off."
+    if key == "kindness":
+        return (f"Kindness nudges are on, every {settings['kind']} minutes." if is_on(settings, "kind")
+                else "Kindness nudges are off.")
+    if key == "check":
+        return (f"The workflow check-in is on, every {CHECK_IN_MINUTES} minutes." if is_on(settings, "check")
+                else "The workflow check-in is off.")
     if key == "snooze":
         return f"Not now puts a nudge off for {settings['snooze']} minutes."
     if settings["claudes"] == before["claudes"]:
@@ -732,7 +778,7 @@ if __name__ == "__main__":
             pass
     elif mode in ("tick", "now", "kindnow", "go", "swap", "done", "snooze", "beep") and not (mode == "snooze" and sys.argv[2:]):
         mod(mode)
-    elif mode in ("level", "every", "kind", "claudes", "snooze"):
+    elif mode in ("level", "every", "kind", "claudes", "snooze", "move", "check"):
         choose(sys.argv[1:])
     elif mode == "settings":
         print(describe(load_settings()))

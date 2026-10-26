@@ -16,7 +16,9 @@
 // a session past the cap has its prompts refused until an older one closes.
 //
 // `/bod config` opens the one pane it has: a small form above the prompt
-// with every setting, closed again on Save, Cancel or Esc.
+// with every setting, closed again on Save, Cancel or Esc. Exercises,
+// kindness and the check-in can each be switched off there, or with
+// `/bod move off`, `/bod kind off` and `/bod check off`.
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
@@ -175,8 +177,11 @@ async function settings($: EngineInterface, args: string[]): Promise<string> {
 const CONFIG = 'bod-config'
 const ROWS: { key: Setting; label: string; unit: string }[] = [
   { key: 'level', label: 'Level', unit: '' },
+  { key: 'move', label: 'Exercises', unit: '' },
   { key: 'every', label: 'Exercise every', unit: ' min' },
+  { key: 'kindness', label: 'Kindness', unit: '' },
   { key: 'kind', label: 'Kindness every', unit: ' min' },
+  { key: 'check', label: 'Check-in', unit: '' },
   { key: 'claudes', label: 'Claude cap', unit: '' },
   { key: 'snooze', label: 'Snooze', unit: ' min' },
 ]
@@ -417,8 +422,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15]',
+      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
+      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -432,7 +437,7 @@ export const register: Register = on => {
     const [setting] = args
     const kindNow = setting === 'kind' && args[1] === 'now'
 
-    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
+    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
       return { text: await settings($, args) }
     }
 

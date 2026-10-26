@@ -35,7 +35,7 @@ export type Reply = View & {
 }
 
 /** A setting `/bod config` shows a row for, as bod.py names it. */
-export type Setting = 'level' | 'every' | 'kind' | 'claudes' | 'snooze'
+export type Setting = 'level' | 'move' | 'every' | 'kindness' | 'kind' | 'check' | 'claudes' | 'snooze'
 
 /** The `/bod config` form while it's open: what's saved, what she's picked, what each may be. */
 export type Form = {
