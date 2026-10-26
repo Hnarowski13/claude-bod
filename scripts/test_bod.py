@@ -18,7 +18,7 @@ import bod  # noqa: E402
 
 def setUpModule():
     # Nudges pick at random; these tests see the list in order instead.
-    patch = mock.patch.object(bod, "pick", lambda count: bod.EXERCISES[:count])
+    patch = mock.patch.object(bod, "pick", lambda count, level="easy": bod.pool(level)[:count])
     patch.start()
     unittest.addModuleCleanup(patch.stop)
 
@@ -57,7 +57,7 @@ class Advance(unittest.TestCase):
     def test_the_plank_counts_down(self):
         state = working(move=11)
         plank = [e for e in bod.EXERCISES if "plank" in e[0]]
-        with mock.patch.object(bod, "pick", lambda count: plank):
+        with mock.patch.object(bod, "pick", lambda count, level="easy": plank):
             bod.advance(state, NOW, NOT_OVER)
         self.assertEqual(state["pending"]["seconds"], 20)
 
@@ -365,6 +365,21 @@ class Levels(unittest.TestCase):
         bod.advance(state, NOW, NOT_OVER)
         self.assertEqual(state["pending"]["kind"], "move")
 
+    def test_gentle_asks_for_one_soft_movement_not_an_exercise(self):
+        state = working(move=6)
+        bod.advance(state, NOW, NOT_OVER, {"level": "gentle", "every": 5, "kind": 15})
+        self.assertEqual(state["pending"]["text"], "3 slow neck rolls each way")
+        self.assertEqual(state["pending"]["count"], 1)
+        self.assertEqual(bod.per_nudge("gentle"), "one gentle movement")
+
+    def test_gentle_never_picks_an_exercise_and_its_swap_stays_gentle(self):
+        exercises = {what for what, _, _ in bod.EXERCISES}
+        for _ in range(50):
+            self.assertNotIn(bod.random.choice(bod.pool("gentle"))[0], exercises)
+            text, _, _ = bod.swapped("3 slow neck rolls each way", "gentle")
+            self.assertTrue(any(what.split("{}")[-1].strip() in text for what, _, _ in bod.GENTLE))
+            self.assertNotIn("neck rolls", text)
+
     def test_every_ten_waits_ten_minutes(self):
         settings = {"level": "easy", "every": 10, "kind": 15}
         state = working(move=6)
@@ -457,6 +472,7 @@ class CommandLine(unittest.TestCase):
         run = lambda *args: subprocess.run(  # noqa: E731
             [sys.executable, os.path.join(HERE, "bod.py"), *args], capture_output=True, text=True
         )
+        self.assertEqual(run("level", "gentle").stdout.strip(), "Your level is now gentle: one gentle movement per nudge.")
         self.assertEqual(run("level", "hard").stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge.")
         self.assertEqual(run("every", "15").stdout.strip(), "Your exercises are now every 15 minutes.")
         self.assertEqual(bod.load_settings(), {"level": "hard", "every": 15, "kind": 15, "claudes": 5, "snooze": 5})
@@ -492,10 +508,10 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("snooze", "7").stdout.strip(), "Pick one of: 2, 5, 10, 15. It's 10 now.")
         self.assertEqual(json.loads(run("choices").stdout), {
             "settings": {"level": "medium", "every": 10, "kind": 30, "claudes": 3, "snooze": 10},
-            "choices": {"level": ["easy", "medium", "hard"], "every": [5, 10, 15], "kind": [5, 10, 15, 30, 45],
+            "choices": {"level": ["gentle", "easy", "medium", "hard"], "every": [5, 10, 15], "kind": [5, 10, 15, 30, 45],
                         "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
-        self.assertIn("- Level: medium (2 exercises per nudge) · /bod level easy|medium|hard", lines)
+        self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|easy|medium|hard", lines)
         self.assertIn("- Exercise every 10 minutes of work · /bod every 5|10|15", lines)
         self.assertIn("- Something kind every 30 minutes · /bod kind 5|10|15|30|45", lines)
         self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)

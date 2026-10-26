@@ -31,9 +31,10 @@ Entry points:
   bod.py show move | plank | kind | check
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
-  bod.py level easy | medium | hard
-                  How much exercise each nudge asks for: one exercise, two,
-                  or three with more reps. Easy by default.
+  bod.py level gentle | easy | medium | hard
+                  How much exercise each nudge asks for: one gentle
+                  movement (no exercise at all), one exercise, two, or
+                  three with more reps. Easy by default.
   bod.py every 5 | 10 | 15
                   How many minutes of work between exercise nudges. Both can
                   go in one call: bod.py level hard every 10, or
@@ -87,7 +88,7 @@ STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-st
 SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/bod-settings.json")
 
 # level: (exercises per nudge, how much the reps and seconds grow)
-LEVELS = {"easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
+LEVELS = {"gentle": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
 KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
@@ -114,6 +115,19 @@ EXERCISES = [
     ("{} arm circles each way", 10, False),
     ("{} toe touches", 10, False),
     ("{} chair dips", 5, False),
+]
+# The gentle level's: soft movements, not exercise, the same shape as EXERCISES.
+GENTLE = [
+    ("{} slow neck rolls each way", 3, False),
+    ("{} slow shoulder rolls", 5, False),
+    ("a {} second reach up to the ceiling", 15, True),
+    ("{} wrist circles each way", 5, False),
+    ("{} ankle circles each foot", 5, False),
+    ("a {} second side stretch each side", 15, True),
+    ("a {} second seated twist each side", 15, True),
+    ("a {} second chest opener, hands clasped behind you", 15, True),
+    ("{} shoulder blade squeezes", 5, False),
+    ("a {} second forward fold, arms hanging", 15, True),
 ]
 COMPASSION = [
     "give yourself a hug",
@@ -273,9 +287,14 @@ def save_settings(settings):
     os.replace(tmp, SETTINGS_PATH)
 
 
-def pick(count):
+def pool(level):
+    """What a level picks from: soft movements on gentle, exercises otherwise."""
+    return GENTLE if level == "gentle" else EXERCISES
+
+
+def pick(count, level="easy"):
     """`count` different exercises, at random, so sets don't keep coming up together."""
-    return random.sample(EXERCISES, count)
+    return random.sample(pool(level), count)
 
 
 def exercise(level="easy", picked=None):
@@ -283,7 +302,7 @@ def exercise(level="easy", picked=None):
     many random ones as the level asks for, or the `picked` ones. Only a lone
     timed exercise counts down; a set of them counts up."""
     count, scale = LEVELS[level]
-    picked = picked or pick(count)
+    picked = picked or pick(count, level)
     count = len(picked)
     amounts = [int(amount * scale + 0.5) for _, amount, _ in picked]
     text = ", then ".join(what.format(n) for (what, _, _), n in zip(picked, amounts))
@@ -294,7 +313,7 @@ def exercise(level="easy", picked=None):
 def swapped(text, level="easy", count=1):
     """Another set of `count` exercises for the "swap" button, none of them
     one that's in `text`, so she never gets the jumping jacks back."""
-    others = [e for e in EXERCISES if e[0].split("{}")[-1].strip() not in text]
+    others = [e for e in pool(level) if e[0].split("{}")[-1].strip() not in text]
     return exercise(level, random.sample(others, count))
 
 
@@ -593,20 +612,26 @@ def show(kind):
     print(json.dumps(view(state, now)))
 
 
+def per_nudge(level):
+    """What each nudge asks for on `level`, in a few words."""
+    if level == "gentle":
+        return "one gentle movement"
+    count, _ = LEVELS[level]
+    return "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if level == "hard" else "")
+
+
 def describe(settings):
-    count, _ = LEVELS[settings["level"]]
-    what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+    what = per_nudge(settings["level"])
     return (f"Claude Bod is on {settings['level']}: {what} every {settings['every']} minutes, "
             f"something kind every {settings['kind']}, at most {settings['claudes']} Claudes open at once.")
 
 
 def info(settings):
     """Every setting, one per line: her choices first, then the ones fixed in this file."""
-    count, _ = LEVELS[settings["level"]]
-    what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+    what = per_nudge(settings["level"])
     return "\n".join([
         "Claude Bod settings (/bod config to change them in one form):",
-        f"- Level: {settings['level']} ({what} per nudge) · /bod level easy|medium|hard",
+        f"- Level: {settings['level']} ({what} per nudge) · /bod level gentle|easy|medium|hard",
         f"- Exercise every {settings['every']} minutes of work · /bod every {'|'.join(map(str, EVERY_CHOICES))}",
         f"- Something kind every {settings['kind']} minutes · /bod kind {'|'.join(map(str, KIND_CHOICES))}",
         f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
@@ -645,7 +670,7 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15.")
+            print("Use: level gentle|easy|medium|hard, every 5|10|15, kind 5|10|15|30|45, claudes 1-10, snooze 2|5|10|15.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -660,8 +685,7 @@ def choose(args):
 def confirm(key, settings, before):
     """One line saying what a setting is now (and, for the Claude cap, what it was)."""
     if key == "level":
-        count, _ = LEVELS[settings["level"]]
-        what = "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if settings["level"] == "hard" else "")
+        what = per_nudge(settings["level"])
         return f"Your level is now {settings['level']}: {what} per nudge."
     if key == "every":
         return f"Your exercises are now every {settings['every']} minutes."

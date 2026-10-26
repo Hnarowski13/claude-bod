@@ -39,7 +39,7 @@ claude plugin install bod@bod
 
 ## Level and timing
 
-- `/bod level easy|medium|hard`: one exercise per nudge, two, or three with more reps and longer holds. Easy by default.
+- `/bod level gentle|easy|medium|hard`: one gentle movement per nudge (stretches and rolls, no exercise at all), one exercise, two, or three with more reps and longer holds. Easy by default.
 - `/bod every 5|10|15`: minutes of work between exercise nudges. 5 by default.
 - `/bod kind 5|10|15|30|45`: minutes of work between kindness nudges. 15 by default.
 - `/bod claudes 1-10`: how many Claudes may be open at once. 5 by default.
