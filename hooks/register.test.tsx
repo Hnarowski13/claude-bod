@@ -128,7 +128,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     if (command === 'choices') {
       return ok(JSON.stringify({
         settings: { level: 'easy', every: 5, kind: 15, claudes: 5, snooze: 5 },
-        choices: { level: ['easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+        choices: { level: ['gentle', 'easy', 'medium', 'hard'], every: [5, 10, 15], kind: [5, 10, 15, 30, 45], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
       }))
     }
 
@@ -605,6 +605,7 @@ test('/bod config opens one form with every setting at its current value, and Sa
   await ui.press({ key: 'kind' })
   await ui.press({ key: 'kind' })
   await ui.press({ key: 'snooze' })
+  await ui.press({ key: 'level' })
   await ui.press({ key: 'level' })
   await ui.press({ key: 'level' })
   await ui.press({ key: 'level' })
