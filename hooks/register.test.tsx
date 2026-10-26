@@ -552,6 +552,17 @@ test('/bod kind now puts a kindness nudge up at once, and isn\'t a setting', asy
   expect(world.commands).not.toContain('kind now')
 })
 
+test('/bod move now is /bod now, and isn\'t a setting', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  world.due = { at: START, nudge: { kind: 'move', text: '10 squats', seconds: null, started: null } }
+  expect(await $.command.run(BOD('move now'))).toMatchObject({ text: '🤸 Movement break: 10 squats' })
+  expect(world.commands).toContain('now')
+  expect(world.commands).not.toContain('move now')
+})
+
 test('done adds "✅ Nice job!" to the chat, beside the toast', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
