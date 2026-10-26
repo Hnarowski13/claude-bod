@@ -17,7 +17,8 @@
 //
 // `/bod config` opens the one pane it has: a small form above the prompt
 // with every setting, closed again on Save, Cancel or Esc. Exercises,
-// kindness and the check-in can each be set to "off" there.
+// kindness and the check-in can each be switched off there, or with
+// `/bod move off`, `/bod kind off` and `/bod check off`.
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
@@ -155,7 +156,7 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
   }
 }
 
-// `/bod level hard`, `/bod every 10`, `/bod kind 30` (or `off`), `/bod check off`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`, `/bod info`: bod.py keeps the choice
+// `/bod level hard`, `/bod every 10`, `/bod kind 30`, `/bod claudes 5`, `/bod level hard every 10` (or `level hard 10`), `/bod settings`, `/bod info`: bod.py keeps the choice
 // and says what changed (`settings` sums it up, `info` lists every setting), or what to pick from.
 async function settings($: EngineInterface, args: string[]): Promise<string> {
   if (script === null) {
@@ -176,17 +177,16 @@ async function settings($: EngineInterface, args: string[]): Promise<string> {
 const CONFIG = 'bod-config'
 const ROWS: { key: Setting; label: string; unit: string }[] = [
   { key: 'level', label: 'Level', unit: '' },
+  { key: 'move', label: 'Exercises', unit: '' },
   { key: 'every', label: 'Exercise every', unit: ' min' },
+  { key: 'kindness', label: 'Kindness', unit: '' },
   { key: 'kind', label: 'Kindness every', unit: ' min' },
-  { key: 'check', label: 'Check-in every', unit: ' min' },
+  { key: 'check', label: 'Check-in', unit: '' },
   { key: 'claudes', label: 'Claude cap', unit: '' },
   { key: 'snooze', label: 'Snooze', unit: ' min' },
 ]
 const FOCUS_RETRY_MS = 300
 const LABEL_WIDTH = Math.max(...ROWS.map(row => row.label.length)) + 1
-
-// A setting's value as the form shows it: "15 min", but "off" on its own.
-export const withUnit = (value: string, unit: string) => (value === 'off' ? value : `${value}${unit}`)
 
 // The value after `value` among `choices`, back to the first after the last.
 export const cycle = (choices: string[], value: string) => choices[(choices.indexOf(value) + 1) % choices.length] ?? value
@@ -422,8 +422,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind (or turn either off), the check-in on or off, how many Claudes may be open and how long a snooze lasts (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [[every] 5|10|15|off] [kind 5|10|15|30|45|off] [check 45|off] [claudes 1-10] [snooze 2|5|10|15]',
+      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
+      argumentHint: '[config] [info] [now] [kind now] [level gentle|easy|medium|hard] [[every] 5|10|15] [kind 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -437,7 +437,7 @@ export const register: Register = on => {
     const [setting] = args
     const kindNow = setting === 'kind' && args[1] === 'now'
 
-    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
+    if (!kindNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
       return { text: await settings($, args) }
     }
 
@@ -524,9 +524,9 @@ export const register: Register = on => {
             <Button key={key} plain autoFocus={index === 0 ? true : undefined} onPress={() => stepRow(key)}>
               {label.padEnd(LABEL_WIDTH)}
               <Text bold={isChanged} color={isChanged ? 'claude' : undefined}>
-                {withUnit(value, unit)}
+                {`${value}${unit}`}
               </Text>
-              <Text dimColor>{isChanged ? ` (was ${withUnit(shown.saved[key], unit)})` : ''}</Text>
+              <Text dimColor>{isChanged ? ` (was ${shown.saved[key]}${unit})` : ''}</Text>
             </Button>
           )
         })}
