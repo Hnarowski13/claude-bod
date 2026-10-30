@@ -99,8 +99,9 @@ export const hours = (seconds: number) => {
 }
 
 // The status line: how long she's worked today, then how long until the next
-// exercise nudge (left out while one is on show), then how many nudges she's
-// put off with "not now" today. Rounded up, so 0:00 is the moment it's due.
+// exercise nudge and the next kindness nudge (left out while one is on show),
+// then how many nudges she's put off with "not now" today. Rounded up, so
+// 0:00 is the moment it's due.
 export const countdown = (shown: View | null, at: number) => {
   const worked = typeof shown?.worked === 'number' ? `⏱ ${hours(shown.worked)} today` : null
   const parts: string[] = []
@@ -108,10 +109,14 @@ export const countdown = (shown: View | null, at: number) => {
   if (shown?.paused) {
     parts.push('⏸ Claude Bod is paused until your next prompt')
   } else if (shown?.next) {
-    const { move } = shown.next
+    const { move, kind } = shown.next
 
     if (move !== undefined) {
       parts.push(`${ICONS.move} move in ${clock(Math.max(0, Math.ceil((move - at) / 1000)))}`)
+    }
+
+    if (kind !== undefined) {
+      parts.push(`${ICONS.kind} kind in ${clock(Math.max(0, Math.ceil((kind - at) / 1000)))}`)
     }
   }
 

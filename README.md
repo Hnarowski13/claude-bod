@@ -2,9 +2,9 @@
 
 Looks after the person at the keyboard while Claude Code runs. Works in every project.
 
-- **Movement nudges** in a band above the prompt: a quick exercise every 5 minutes of work (or 10, or 15) and something kind to yourself every 15 (or 10, 30, 45). They have go / done / not now buttons and an exercise timer.
+- **Movement nudges** in a band above the prompt: a quick exercise every 5 minutes of work (or 10, or 15) and something kind to yourself every 15 (or 10, 30, 45). They have go / done / not now buttons and an exercise timer. The exercise timer restarts when you press done; kindness keeps a fixed schedule, so one that waited behind an exercise doesn't push the next one back.
 - **Workflow check-in**: every 45 minutes of work, Bod asks how the workflow is going and offers one thing to try against Claude-FOG (too many Claudes, lost track of what each is doing): close merged tabs, finish one session first, and so on. It takes the session over like an exercise does, with done / not now.
-- **Countdown**: the status line under the prompt shows how long until the next exercise nudge (`🤸 move in 3:12`), or that Bod is paused after 20 minutes without a prompt.
+- **Countdown**: the status line under the prompt shows how long until the next exercise and kindness nudges (`🤸 move in 3:12 · 💛 kind in 9:40`), or that Bod is paused after 20 minutes without a prompt.
 - **Takeover**: an exercise nudge or check-in takes the session over (a box above the prompt, one exercise per line). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
 - **Stop for the day**: past 4 hours of Claude time today, a "stop for the day" line stays up in the band.
 - **Claude cap**: at most 5 Claudes open at once (change it with `/bod claudes <n>`). A newer session refuses prompts until an older one closes.
