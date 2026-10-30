@@ -43,7 +43,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // The lines the mod added to the chat.
     logs: [] as string[],
     // When the move nudge is due, as bod.py would send it.
-    next: null as { move?: number } | null,
+    next: null as { move?: number; kind?: number } | null,
     paused: false,
     // Seconds worked today, as bod.py would count them; undefined leaves it out.
     worked: undefined as number | undefined,
@@ -203,6 +203,30 @@ test('the status line counts down to the next nudge, and it shows the second it 
   await clock.advance(121_000)
 
   expect(await ui.find({ text: /squats/ })).toBeDefined()
+  expect(world.status).toBeUndefined()
+})
+
+test('the status line counts down to the kindness nudge beside the exercise', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000, kind: START + 581_000 }
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('🤸 move in 3:01 · 💛 kind in 9:40')
+
+  // Kindness alone, with exercises switched off: the mod asks bod.py the
+  // second it's due, the same as for an exercise.
+  world.next = { kind: START + 61_000 }
+  await clock.advance(5_000)
+
+  expect(world.status).toBe('💛 kind in 0:55')
+
+  world.due = { at: START + 61_000, nudge: { kind: 'kind', text: 'sip some water', seconds: null, started: null } }
+  await clock.advance(55_000)
+
+  expect(await ui.find({ text: /sip some water/ })).toBeDefined()
   expect(world.status).toBeUndefined()
 })
 

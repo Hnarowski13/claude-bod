@@ -4,7 +4,10 @@ for the day.
 
 Two nudges on two separate timers: a short exercise every 5, 10 or 15
 minutes of work (her pick, 5 by default), and something kind to herself
-every 5, 10, 15, 30 or 45 (her pick too, 15 by default). Every CHECK_IN_MINUTES a
+every 5, 10, 15, 30 or 45 (her pick too, 15 by default). The exercise timer
+restarts when she presses done; kindness keeps a fixed schedule, each one due
+its interval after the last was due, however long that one waited behind an
+exercise or sat on show. Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
 (too many Claudes, lost track of what each one is doing). Each of the three
 can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
@@ -175,8 +178,9 @@ COUNTS = ("moves", "kinds", "checks")
 # Only set while the mod runs: its last tick, and the pause after a done.
 OPTIONAL_TIMES = ("mod_seen", "quiet_until")
 # The nudge on show is {"kind": move | kind | check, "text", "seconds",
-# "beeped", and these times}. "started" is when she pressed go.
-PENDING_TIMES = ("started", "snoozed_until")
+# "beeped", and these times}. "started" is when she pressed go; "due" is when
+# a kindness nudge was due, which its done sets last_kind from.
+PENDING_TIMES = ("started", "snoozed_until", "due")
 LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check"}
 
 
@@ -367,6 +371,22 @@ def due(state, key, minutes, now):
     return now - state[key] >= timedelta(minutes=minutes)
 
 
+def on_schedule(was_due, minutes, now):
+    """Where a fixed schedule of every `minutes` stands at `now`: the last
+    due time at or before it, starting from `was_due`. A kindness nudge done at
+    10:16 that was due at 10:15 leaves the next one due at 10:30; one that sat
+    until 10:31 skips the 10:30 slot, so two never come back to back."""
+    step = timedelta(minutes=minutes)
+    while was_due + step <= now:
+        was_due += step
+    return was_due
+
+
+def kindness(state, due):
+    """A kindness nudge, due at `due`, as the pending dict holds it."""
+    return {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None, "due": due}
+
+
 def is_on(settings, kind):
     return settings[SWITCH[kind]] == "on"
 
@@ -461,9 +481,9 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
     elif is_on(settings, "kind") and due(state, "last_kind", settings["kind"], now):
-        pending = {"kind": "kind", "text": compassion(state["kinds"]), "seconds": None}
+        pending = kindness(state, state["last_kind"] + timedelta(minutes=settings["kind"]))
     if pending:
-        state["pending"] = {**pending, "started": None, "snoozed_until": None, "beeped": False}
+        state["pending"] = {"due": None, **pending, "started": None, "snoozed_until": None, "beeped": False}
 
 
 def right_now(state, now, settings=None, kind="move"):
@@ -486,15 +506,13 @@ def right_now(state, now, settings=None, kind="move"):
         pending["snoozed_until"] = None
         return
     if kind == "kind":
-        state["pending"] = {
-            "kind": "kind", "text": compassion(state["kinds"]), "seconds": None,
-            "started": None, "snoozed_until": None, "beeped": False,
-        }
+        # Asked for, so due now: the schedule runs on from here.
+        state["pending"] = {**kindness(state, now), "started": None, "snoozed_until": None, "beeped": False}
         return
     settings = settings or load_settings()
     text, seconds, count = exercise(settings["level"])
     state["pending"] = {
-        "kind": "move", "text": text, "seconds": seconds, "count": count,
+        "kind": "move", "text": text, "seconds": seconds, "count": count, "due": None,
         "started": None, "snoozed_until": None, "beeped": False,
     }
 
@@ -526,6 +544,9 @@ def press(state, button, now):
             # How many exercises she's done, the whole set counted.
             state["moves"] += pending.get("count", 1)
         elif pending["kind"] == "kind":
+            # The schedule runs from when it was due, not from the done, so
+            # waiting behind an exercise never pushes the next one back.
+            state["last_kind"] = on_schedule(pending.get("due") or now, load_settings()["kind"], now)
             state["kinds"] += 1
         elif pending["kind"] == "check":
             state["checks"] += 1
@@ -546,10 +567,11 @@ def press(state, button, now):
 
 
 def upcoming(state, now, settings=None):
-    """When the exercise nudge will next show, or None while a nudge is on
-    show. Nothing new shows during the pause after a done, and a nudge put off
-    with "not now" comes back when its snooze ends, ahead of the rest, so the
-    exercise can't show before then either."""
+    """When the exercise and kindness nudges will next show, each left out
+    while it's switched off, or None while a nudge is on show. Nothing new
+    shows during the pause after a done, and a nudge put off with "not now"
+    comes back when its snooze ends, ahead of the rest, so neither can show
+    before then either."""
     pending = state["pending"]
     earliest = state["quiet_until"] or now
     if pending:
@@ -558,10 +580,10 @@ def upcoming(state, now, settings=None):
             return None
         earliest = snoozed
     settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
-    if not is_on(settings, "move"):
-        return {}
+    every = {"move": settings["every"], "kind": settings["kind"]}
     return {
-        "move": max(state["last_move"] + timedelta(minutes=settings["every"]), earliest),
+        kind: max(state[LAST[kind]] + timedelta(minutes=minutes), earliest)
+        for kind, minutes in every.items() if is_on(settings, kind)
     }
 
 

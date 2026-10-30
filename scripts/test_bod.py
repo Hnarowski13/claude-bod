@@ -149,6 +149,46 @@ class Press(unittest.TestCase):
         self.assertEqual(bod.press(state, "done", NOW), {})
         self.assertEqual(state["kinds"], 1)
 
+    def test_kindness_keeps_its_schedule_however_long_it_sat_on_show(self):
+        # Due at 10:00 (last one 15 minutes back), done at 10:04: the next
+        # one is due at 10:15, not 10:19.
+        state = self.shown(kind=15)
+        self.assertEqual(state["pending"]["due"], NOW)
+        bod.press(state, "done", NOW + minutes(4))
+        self.assertEqual(state["last_kind"], NOW)
+        kind_only = {"move": "off", "check": "off"}
+        bod.advance(state, NOW + minutes(14), NOT_OVER, kind_only)
+        self.assertIsNone(state["pending"])
+        bod.advance(state, NOW + minutes(15), NOT_OVER, kind_only)
+        self.assertEqual(state["pending"]["kind"], "kind")
+        self.assertEqual(state["pending"]["due"], NOW + minutes(15))
+
+    def test_kindness_that_waited_behind_an_exercise_is_still_due_on_the_dot(self):
+        # Both due at 10:00; the exercise goes first and takes a minute, then
+        # the quiet minute, so kindness shows at 10:02 and is done at 10:03.
+        state = self.shown(move=5, kind=15)
+        self.assertEqual(state["pending"]["kind"], "move")
+        bod.press(state, "done", NOW + minutes(1))
+        bod.advance(state, NOW + minutes(2), NOT_OVER)
+        self.assertEqual(state["pending"]["kind"], "kind")
+        bod.press(state, "done", NOW + minutes(3))
+        self.assertEqual(state["last_kind"], NOW)
+
+    def test_kindness_done_past_the_next_slot_skips_it_rather_than_coming_straight_back(self):
+        state = self.shown(kind=15)
+        bod.press(state, "snooze", NOW)
+        bod.press(state, "snooze", NOW + minutes(5))
+        bod.press(state, "snooze", NOW + minutes(10))
+        bod.press(state, "done", NOW + minutes(16))
+        # Due at 10:00, done at 10:16: the 10:15 slot has gone by, so 10:30 is next.
+        self.assertEqual(state["last_kind"], NOW + minutes(15))
+
+    def test_a_kindness_nudge_from_before_due_was_kept_restarts_from_the_done(self):
+        state = self.shown(kind=46)
+        del state["pending"]["due"]
+        bod.press(state, "done", NOW + minutes(1))
+        self.assertEqual(state["last_kind"], NOW + minutes(1))
+
     def test_not_now_hides_the_nudge_for_five_minutes_then_brings_the_same_one_back(self):
         state = self.shown(move=11)
         bod.press(state, "snooze", NOW)
@@ -233,14 +273,26 @@ class Upcoming(unittest.TestCase):
             return None
         return {kind: (ms - int(now.timestamp() * 1000)) // 1000 for kind, ms in shown["next"].items()}
 
-    def test_counts_down_to_the_exercise(self):
-        state = working(move=2)
-        self.assertEqual(self.next_in(state), {"move": 180})
+    def test_counts_down_to_the_exercise_and_the_kindness_nudge(self):
+        state = working(move=2, kind=5)
+        self.assertEqual(self.next_in(state), {"move": 180, "kind": 600})
+
+    def test_leaves_out_whichever_is_switched_off(self):
+        state = working(move=2, kind=5)
+        self.assertEqual(bod.upcoming(state, NOW, {**self.EVERY_5, "kindness": "off"}).keys(), {"move"})
+        self.assertEqual(bod.upcoming(state, NOW, {**self.EVERY_5, "move": "off"}).keys(), {"kind"})
+
+    def test_kindness_overdue_behind_an_exercise_counts_down_to_the_quiet_minute(self):
+        state = working(move=5, kind=20)
+        bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
+        self.assertEqual(state["pending"]["kind"], "move")
+        bod.press(state, "done", NOW)
+        self.assertEqual(self.next_in(state), {"move": 300, "kind": bod.QUIET_SECONDS})
 
     def test_hits_zero_the_moment_the_nudge_goes_on_show(self):
-        state = working(move=2)
+        state = working(move=2, kind=5)
         due = NOW + minutes(3)
-        self.assertEqual(self.next_in(state, due)["move"], 0)
+        self.assertEqual(self.next_in(state, due), {"move": 0, "kind": 420})
         bod.advance(state, due, NOT_OVER, self.EVERY_5)
         self.assertEqual(state["pending"]["kind"], "move")
 
@@ -253,7 +305,7 @@ class Upcoming(unittest.TestCase):
         state = working(move=6)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "snooze", NOW)
-        self.assertEqual(self.next_in(state), {"move": bod.DEFAULT_SETTINGS["snooze"] * 60})
+        self.assertEqual(self.next_in(state)["move"], bod.DEFAULT_SETTINGS["snooze"] * 60)
 
     def test_not_now_on_kindness_keeps_the_exercise_countdown(self):
         state = working(move=2, kind=46)
@@ -261,15 +313,15 @@ class Upcoming(unittest.TestCase):
         self.assertEqual(state["pending"]["kind"], "kind")
         bod.press(state, "snooze", NOW)
         # The exercise waits for the kindness nudge to come back and be done.
-        self.assertEqual(self.next_in(state), {"move": bod.DEFAULT_SETTINGS["snooze"] * 60})
+        self.assertEqual(self.next_in(state), {"move": bod.DEFAULT_SETTINGS["snooze"] * 60, "kind": bod.DEFAULT_SETTINGS["snooze"] * 60})
         later = NOW + minutes(4)
-        self.assertEqual(self.next_in(state, later), {"move": 60})
+        self.assertEqual(self.next_in(state, later), {"move": 60, "kind": 60})
 
     def test_after_done_nothing_is_due_before_the_quiet_minute_ends(self):
         state = working(move=4.5, kind=46)
         bod.advance(state, NOW, NOT_OVER, self.EVERY_5)
         bod.press(state, "done", NOW)
-        self.assertEqual(self.next_in(state), {"move": bod.QUIET_SECONDS})
+        self.assertEqual(self.next_in(state)["move"], bod.QUIET_SECONDS)
 
     def test_away_long_enough_it_says_paused_instead(self):
         state = working(move=2, prompt=bod.BREAK_MINUTES)
@@ -322,7 +374,8 @@ class RightNow(unittest.TestCase):
         self.assertEqual(state["pending"]["kind"], "kind")
         self.assertEqual(state["last_move"], NOW - minutes(1))
         bod.press(state, "done", NOW + minutes(1))
-        self.assertEqual(state["last_kind"], NOW + minutes(1))
+        # The schedule runs on from when she asked, not from the done.
+        self.assertEqual(state["last_kind"], NOW)
         self.assertEqual(state["kinds"], 1)
 
 
@@ -599,8 +652,9 @@ class SwitchedOff(unittest.TestCase):
         bod.advance(state, NOW, NOT_OVER, {"check": "off"})
         self.assertEqual(state["pending"]["kind"], "move")
 
-    def test_exercises_off_leaves_no_countdown(self):
-        self.assertEqual(bod.view(working(), NOW, {"move": "off"})["next"], {})
+    def test_a_switched_off_nudge_leaves_no_countdown(self):
+        self.assertEqual(bod.view(working(), NOW, {"move": "off"})["next"].keys(), {"kind"})
+        self.assertEqual(bod.view(working(), NOW, {"move": "off", "kindness": "off"})["next"], {})
 
     def test_without_the_mod_claude_is_handed_none_of_them(self):
         bod.save_settings({**bod.DEFAULT_SETTINGS, "move": "off", "kindness": "off", "check": "off"})

@@ -15,8 +15,8 @@ export type View = {
   nudge: Nudge | null
   /** The "stop for the day" line, once today's hours are past the cap. */
   stop: string | null
-  /** When the exercise nudge is next due; null while a nudge is on show. */
-  next?: { move?: number } | null
+  /** When the exercise and kindness nudges are next due, each left out while it's off; null while a nudge is on show. */
+  next?: { move?: number; kind?: number } | null
   /** She's been away long enough that nothing shows until her next prompt. */
   paused?: boolean
   /** Seconds worked today, for the status line; null when they couldn't be counted. */
