@@ -11,6 +11,8 @@
 //
 // The status line under the prompt keeps a running total of today's hours,
 // beside the countdowns to the next nudges and how many she's skipped today.
+// It leads with the session's phase (researching, coding, testing, ...),
+// read from its own tool calls, as a little progress bar.
 //
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
@@ -129,12 +131,81 @@ export const countdown = (shown: View | null, at: number) => {
   return line.length > 0 ? line.join(' · ') : undefined
 }
 
+// The steps of working a ticket, in order (roughly the pick-up-ticket flow).
+export const PHASES = [
+  'researching',
+  'coding',
+  'built-in review',
+  'simplifying',
+  'reviewing',
+  'testing',
+  'handing back',
+] as const
+type Phase = (typeof PHASES)[number]
+
+// Skills that start a phase, by name.
+const SKILL_PHASES: Record<string, Phase> = {
+  'pick-up-ticket': 'researching',
+  'built-in-review': 'built-in review',
+  simplify: 'simplifying',
+  'code-review': 'reviewing',
+}
+const TEST_COMMAND = /\b(rspec|vitest|pnpm (run )?(test|e2e)|bin\/e2e|playwright|pytest|unittest|plugin test)\b/
+const PR_COMMAND = /\bgh pr create\b/
+const READING_TOOLS = ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch']
+const EDITING_TOOLS = ['Edit', 'Write', 'NotebookEdit']
+
+// Which phase a tool call says this session is in. A call that says nothing
+// keeps the phase it was in. Reading only counts before anything else has
+// happened: reading files while coding or reviewing is still coding or reviewing.
+export const phaseAfter = (current: Phase | null, tool: string, input: Record<string, unknown>): Phase | null => {
+  if (tool === 'Skill' && typeof input.skill === 'string') {
+    return SKILL_PHASES[input.skill] ?? current
+  }
+
+  if (EDITING_TOOLS.includes(tool)) {
+    return 'coding'
+  }
+
+  if (tool === 'Bash' && typeof input.command === 'string') {
+    if (PR_COMMAND.test(input.command)) {
+      return 'handing back'
+    }
+
+    if (TEST_COMMAND.test(input.command)) {
+      return 'testing'
+    }
+  }
+
+  if (READING_TOOLS.includes(tool) && current === null) {
+    return 'researching'
+  }
+
+  return current
+}
+
+// e.g. "▰▰▱▱▱▱▱ coding": one block per phase, filled up to this one.
+export const phaseBar = (phase: Phase) => {
+  const done = PHASES.indexOf(phase) + 1
+
+  return `${'▰'.repeat(done)}${'▱'.repeat(PHASES.length - done)} ${phase}`
+}
+
+// The whole status line: this session's phase, then the nudge countdown.
+export const statusLine = (phase: Phase | null, nudges: string | undefined) => {
+  const parts = [phase === null ? undefined : phaseBar(phase), nudges].filter(part => part !== undefined)
+
+  return parts.length > 0 ? parts.join('  │  ') : undefined
+}
+
 // Where bod.py is, once session.start has checked it runs; null when it doesn't.
 let script: string | null = null
 // The `started` of the countdown this session already asked to beep for.
 let beepAsked: number | null = null
 // What the status line says now, so it's only set when that changes.
 let status: string | undefined
+// The phase this session's tool calls say it's in; null until one does.
+let phase: Phase | null = null
 // The due time this session already polled for, so a nudge shows the second
 // its countdown ends instead of on the next 5 second poll.
 let dueAsked: number | null = null
@@ -291,7 +362,7 @@ async function second($: EngineInterface) {
     shown = await read($, view)
   }
 
-  const text = countdown(shown, at)
+  const text = statusLine(phase, countdown(shown, at))
 
   if (text !== status) {
     status = text
@@ -417,6 +488,7 @@ export const register: Register = on => {
     const started = await next(e)
 
     script = `${$.plugin.root}/scripts/bod.py`
+    phase = null
 
     // bod.py doesn't run (no python3?): stay out of the way.
     if ((await bod($, 'tick')) === null) {
@@ -436,6 +508,14 @@ export const register: Register = on => {
 
     return started
   })
+
+  // Watches this session's own tool calls for its phase. Only reads them:
+  // whatever happens here, the call goes on.
+  on('tool.call', ($, e, next) => {
+    phase = phaseAfter(phase, e.tool, e as unknown as Record<string, unknown>)
+
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('command.run', { command: 'bod' }, async ($, e) => {
     const args = (e.args ?? '').trim().split(/\s+/).filter(Boolean)
