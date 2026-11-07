@@ -257,6 +257,45 @@ test("the status line leads with today's hours, and keeps them while a nudge is 
   expect(world.status).toBe('⏱ 14m today')
 })
 
+test("the status line leads with this session's phase, read from its own tool calls", async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000 }
+  on('tool.call', () => ({ result: { text: 'ok' } }))
+  await $.session.start(SESSION)
+  await clock.advance(1_000)
+
+  // No phase yet: just the countdown, as before.
+  expect(world.status).toBe('🤸 move in 3:01')
+
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('▰▱▱▱▱▱▱ researching  │  🤸 move in 3:00')
+
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' })
+  // Reading while coding is still coding.
+  await $.tool.call({ tool: 'Read', file_path: '/repo/b.ts' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('▰▰▱▱▱▱▱ coding  │  🤸 move in 2:59')
+
+  await $.tool.call({ tool: 'Skill', skill: 'code-review' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('▰▰▰▰▰▱▱ reviewing  │  🤸 move in 2:58')
+
+  await $.tool.call({ tool: 'Bash', command: 'bundle exec rspec spec/models' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('▰▰▰▰▰▰▱ testing  │  🤸 move in 2:57')
+
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('▰▰▰▰▰▰▰ handing back  │  🤸 move in 2:56')
+})
+
 test('an exercise: go starts a timer that counts up, done ends it', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
