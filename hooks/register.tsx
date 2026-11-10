@@ -114,7 +114,7 @@ const prCount = (count: number) => {
 }
 
 // Today's merged PRs against the daily cap, as a progress bar that fills up
-// as she gets closer: "▰▰▰▰▰▰▱▱▱▱ 12/20 PRs". Full, and saying so, once she's there.
+// as she gets closer: "▰▰▰▰▰▰▱▱▱▱ 9/15 PRs". Full, and saying so, once she's there.
 export const prBar = (count: number, cap: number) => {
   const filled = Math.min(PR_BAR_BLOCKS, Math.round((count / cap) * PR_BAR_BLOCKS))
   const bar = `${'▰'.repeat(filled)}${'▱'.repeat(PR_BAR_BLOCKS - filled)}`
