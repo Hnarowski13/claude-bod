@@ -25,6 +25,8 @@ export type View = {
   skips?: number
   /** Today's merged PRs (a Bod PR counts as half) and the daily cap, for the status line; null when GitHub couldn't be asked. */
   merged?: { count: number; cap: number } | null
+  /** Why prompts are refused: today's hours are past the hard cap. Null until then. */
+  locked?: string | null
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */

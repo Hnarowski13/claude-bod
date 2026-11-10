@@ -50,6 +50,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     worked: undefined as number | undefined,
     // Today's merged PRs against the cap, as bod.py would count them; null leaves it out.
     merged: null as { count: number; cap: number } | null,
+    // Why bod.py says prompts are refused (past the daily cap); null lets them through.
+    locked: null as string | null,
     // How many times she's said "not now" today, as bod.py would count them.
     skips: 0,
     // What the status line says, as the engine would draw it.
@@ -179,7 +181,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     return ok(
-      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, merged: world.merged, skips: world.skips, ...said })
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, merged: world.merged, locked: world.locked, skips: world.skips, ...said })
     )
   })
 
@@ -402,6 +404,20 @@ test('no prompt is sent while a check-in is on show', async ($, on) => {
 
   expect(drop).toContain('🧭 Workflow check-in')
   expect(drop).toContain('Press done, or "not now"')
+})
+
+test('past the daily cap, no prompt is sent, with no nudge on show', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  expect((await $.prompt.submit(PROMPT)).drop).toBeUndefined()
+
+  world.locked = "You've been at this about 2h 01m today, past your 2 hour cap."
+
+  const { drop } = await $.prompt.submit(PROMPT)
+
+  expect(drop).toBe("🛑 You've been at this about 2h 01m today, past your 2 hour cap.")
 })
 
 test('swap trades the exercise for a different one', async ($, on) => {

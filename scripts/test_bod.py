@@ -585,7 +585,7 @@ class CommandLine(unittest.TestCase):
         self.assertIn("- Exercise every 10 minutes of work · /bod move every 5|10|15 · /bod move off", lines)
         self.assertIn("- Something kind every 30 minutes · /bod kind every 5|10|15|30|45 · /bod kind off", lines)
         self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)
-        self.assertIn(f"- Daily cap: {bod.DAILY_CAP_HOURS} hours, then a stop-for-the-day line", lines)
+        self.assertIn(f"- Daily cap: {bod.DAILY_CAP_HOURS} hours, then prompts are refused until midnight", lines)
         self.assertEqual(bod.load_settings()["claudes"], 3)
         os.remove(bod.SETTINGS_PATH)
 
@@ -747,6 +747,19 @@ class Worked(unittest.TestCase):
                 self.assertEqual(bod.last_counted(bod.load_state(), NOW, "go"), timedelta(hours=1))
             finally:
                 bod.STATE_PATH = old
+
+
+class HardCap(unittest.TestCase):
+    def test_under_the_cap_prompts_go_through(self):
+        self.assertIsNone(bod.view(working(), NOW, worked=timedelta(hours=1, minutes=59))["locked"])
+
+    def test_past_the_cap_prompts_are_refused_until_midnight(self):
+        locked = bod.view(working(), NOW, worked=timedelta(hours=2, minutes=1))["locked"]
+        self.assertIn("2h 01m", locked)
+        self.assertIn("midnight", locked)
+
+    def test_hours_that_could_not_be_counted_never_lock(self):
+        self.assertIsNone(bod.view(working(), NOW)["locked"])
 
 
 class Merged(unittest.TestCase):
