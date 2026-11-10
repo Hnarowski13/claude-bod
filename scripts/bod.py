@@ -99,7 +99,7 @@ MOD_ALIVE_SECONDS = 60
 # presses never do: the scan takes most of a second and the band waits on it.
 WORKED_REFRESH_SECONDS = 60
 # How many merged PRs a day the status line's progress bar fills up to.
-DAILY_PR_CAP = 20
+DAILY_PR_CAP = 15
 # How often a tick asks GitHub again for today's merged PRs (a network call).
 MERGED_REFRESH_SECONDS = 300
 
