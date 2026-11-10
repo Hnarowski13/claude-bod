@@ -11,7 +11,9 @@ exercise or sat on show. Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
 (too many Claudes, lost track of what each one is doing). Each of the three
 can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
-they pass DAILY_CAP_HOURS a "stop for the day" line stays up.
+they pass DAILY_CAP_HOURS a "stop for the day" line stays up. The cap is hard:
+past it, every session refuses prompts until midnight (the mod reads
+"locked" from the view).
 
 Entry points:
 
@@ -86,7 +88,8 @@ CAP_CHECK_MINUTES = 30
 # How often the workflow check-in comes up.
 CHECK_IN_MINUTES = 45
 BREAK_MINUTES = 20
-DAILY_CAP_HOURS = 4
+# Hours of Claude time a day. Past them, prompts are refused until midnight.
+DAILY_CAP_HOURS = 2
 STRETCH_LIMIT_MINUTES = 90
 # After a done, how long the band stays empty before the next nudge may show.
 QUIET_SECONDS = 60
@@ -298,6 +301,14 @@ def stop_nudge(worked):
     return (
         f"You've been at this about {fmt(worked)} today, past your {DAILY_CAP_HOURS} hour cap. "
         "Stop for the day. The backlog will still be there tomorrow."
+    )
+
+
+def lock_text(worked):
+    """Why a prompt is refused once today's hours are past the hard cap."""
+    return (
+        f"You've been at this about {fmt(worked)} today, past your {DAILY_CAP_HOURS} hour cap, "
+        "so Claude is done for today. It opens again at midnight. Go love yourself 💛"
     )
 
 
@@ -602,7 +613,9 @@ def view(state, now, settings=None, worked=None, merged=None):
     enough that nothing shows until her next prompt restarts the timers;
     "worked" is how many seconds she's worked today, when it was counted;
     "skips" is how many times she's said "not now" today;
-    "merged" is today's merged PRs against the daily cap, when they were counted."""
+    "merged" is today's merged PRs against the daily cap, when they were counted;
+    "locked" is why prompts are refused once today's hours pass the hard cap,
+    and None until then (or when the hours couldn't be counted)."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
@@ -629,6 +642,7 @@ def view(state, now, settings=None, worked=None, merged=None):
         "worked": int(worked.total_seconds()) if worked is not None else None,
         "skips": skips_today(state, now),
         "merged": {"count": merged, "cap": DAILY_PR_CAP} if merged is not None else None,
+        "locked": lock_text(worked) if worked is not None and over_cap(worked) else None,
     }
 
 
@@ -757,7 +771,7 @@ def info(settings):
          if is_on(settings, "check") else "- Workflow check-in: off · /bod check on"),
         f"- Snooze: {settings['snooze']} minutes · /bod snooze {'|'.join(map(str, SNOOZE_CHOICES))}",
         f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
-        f"- Daily cap: {DAILY_CAP_HOURS} hours, then a stop-for-the-day line",
+        f"- Daily cap: {DAILY_CAP_HOURS} hours, then prompts are refused until midnight",
         f"- Take a break after {STRETCH_LIMIT_MINUTES} minutes without one (/work-check)",
     ])
 

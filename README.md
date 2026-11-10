@@ -8,7 +8,7 @@ Looks after the person at the keyboard while Claude Code runs. Works in every pr
 - **Phase**: the status line leads with what this session is doing, as a little progress bar (`▰▰▱▱▱▱▱ coding`), read from its own tool calls: reading → researching, editing → coding, `/built-in-review`, `/simplify`, `/code-review`, a test run (rspec, vitest, e2e, unittest, ...) → testing, `gh pr create` → handing back.
 - **Merged PRs**: the status line also shows today's merged PRs against a daily cap of 20, as a bar that fills up (`▰▰▰▰▰▰▱▱▱▱ 12½/20 PRs`), so you can see how many more you can do. It asks GitHub through `gh` every 5 minutes; a claude-bod PR counts as half. Without `gh` it's simply left out.
 - **Takeover**: an exercise nudge or check-in takes the session over (a box above the prompt, one exercise per line). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
-- **Stop for the day**: past 4 hours of Claude time today, a "stop for the day" line stays up in the band.
+- **Stop for the day**: past 2 hours of Claude time today, a "stop for the day" line stays up in the band and every session refuses prompts until midnight. The hours are a rough count from every project's transcripts; if they can't be counted, nothing is refused.
 - **Claude cap**: at most 5 Claudes open at once (change it with `/bod claudes <n>`). A newer session refuses prompts until an older one closes.
 - **`/work-check`**: hours today, the current stretch, and a verdict (keep going, take a break, or stop).
 

@@ -15,6 +15,8 @@
 // It leads with the session's phase (researching, coding, testing, ...),
 // read from its own tool calls, as a little progress bar.
 //
+// Past the daily cap on Claude time, every prompt is refused until midnight.
+//
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
 //
@@ -597,6 +599,11 @@ export const register: Register = on => {
       await show($, null, await $.clock.now())
 
       return next(e)
+    }
+
+    // Past today's hard cap on Claude time: nothing goes through until midnight.
+    if (reply.locked) {
+      return { drop: `🛑 ${reply.locked}` }
     }
 
     if (!locks(reply.nudge)) {
