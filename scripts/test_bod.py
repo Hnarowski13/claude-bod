@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -14,6 +14,7 @@ sys.path.insert(0, HERE)
 SETTINGS_DIR = tempfile.mkdtemp()
 os.environ["BOD_SETTINGS"] = os.path.join(SETTINGS_DIR, "settings.json")
 import bod  # noqa: E402
+import merged  # noqa: E402
 
 
 def setUpModule():
@@ -501,7 +502,7 @@ class CommandLine(unittest.TestCase):
     def run_bod(self, mode, path, *args):
         out = subprocess.run(
             [sys.executable, os.path.join(HERE, "bod.py"), mode, *args],
-            env={**os.environ, "BOD_STATE": path},
+            env={**os.environ, "BOD_STATE": path, "BOD_GH": "/nonexistent/gh"},
             capture_output=True,
             text=True,
             check=True,
@@ -668,7 +669,7 @@ class SwitchedOff(unittest.TestCase):
 
     def test_off_is_kept_said_and_takes_down_an_unstarted_nudge_of_that_kind(self):
         with tempfile.TemporaryDirectory() as folder:
-            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json")}
+            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json"), "BOD_GH": "/nonexistent/gh"}
             run = lambda *args: subprocess.run(  # noqa: E731
                 [sys.executable, os.path.join(HERE, "bod.py"), *args], env=env, capture_output=True, text=True
             ).stdout.strip()
@@ -746,6 +747,48 @@ class Worked(unittest.TestCase):
                 self.assertEqual(bod.last_counted(bod.load_state(), NOW, "go"), timedelta(hours=1))
             finally:
                 bod.STATE_PATH = old
+
+
+class Merged(unittest.TestCase):
+    def pr(self, repo, closed):
+        return {"repository": {"name": repo}, "closedAt": closed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}
+
+    def test_counts_only_since_local_midnight_with_bod_prs_as_half(self):
+        midnight = NOW.replace(hour=0, minute=0)
+        prs = [
+            self.pr("new-goats", NOW - timedelta(hours=1)),
+            self.pr("claude-bod", NOW - timedelta(hours=2)),
+            self.pr("new-goats", midnight - timedelta(minutes=1)),
+        ]
+        self.assertEqual(merged.count(prs, midnight), 1.5)
+
+    def test_the_view_carries_the_count_and_the_cap(self):
+        shown = bod.view(working(), NOW, merged=12.5)
+        self.assertEqual(shown["merged"], {"count": 12.5, "cap": bod.DAILY_PR_CAP})
+
+    def test_a_count_that_could_not_be_had_is_left_out(self):
+        self.assertIsNone(bod.view(working(), NOW)["merged"])
+
+    def counted(self, ago, at=NOW):
+        state = working()
+        state["merged"] = {"count": 3, "at": (at - timedelta(seconds=ago)).isoformat()}
+        return state
+
+    def test_a_tick_reuses_a_count_under_five_minutes_old(self):
+        self.assertEqual(bod.last_merged(self.counted(200), NOW, "tick"), 3)
+
+    def test_a_tick_asks_again_after_five_minutes(self):
+        self.assertIsNone(bod.last_merged(self.counted(300), NOW, "tick"))
+
+    def test_a_button_press_never_waits_on_github(self):
+        self.assertEqual(bod.last_merged(self.counted(3000), NOW, "done"), 3)
+
+    def test_yesterdays_count_is_never_used(self):
+        self.assertIsNone(bod.last_merged(self.counted(0, at=NOW - timedelta(days=1)), NOW, "done"))
+
+    def test_no_gh_means_no_count(self):
+        with mock.patch("merged.subprocess.run", side_effect=FileNotFoundError):
+            self.assertIsNone(merged.merged_today(NOW))
 
 
 if __name__ == "__main__":

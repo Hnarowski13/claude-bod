@@ -23,6 +23,8 @@ export type View = {
   worked?: number | null
   /** How many times she's said "not now" today, for the status line. */
   skips?: number
+  /** Today's merged PRs (a Bod PR counts as half) and the daily cap, for the status line; null when GitHub couldn't be asked. */
+  merged?: { count: number; cap: number } | null
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */

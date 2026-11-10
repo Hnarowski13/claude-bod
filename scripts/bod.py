@@ -79,6 +79,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hours import GAP_MINUTES, timestamps  # noqa: E402
+from merged import merged_today  # noqa: E402
 
 # How often to add up today's hours (a scan of every transcript) for the cap.
 CAP_CHECK_MINUTES = 30
@@ -94,6 +95,10 @@ MOD_ALIVE_SECONDS = 60
 # How often a tick adds up today's hours again for the status line. Button
 # presses never do: the scan takes most of a second and the band waits on it.
 WORKED_REFRESH_SECONDS = 60
+# How many merged PRs a day the status line's progress bar fills up to.
+DAILY_PR_CAP = 20
+# How often a tick asks GitHub again for today's merged PRs (a network call).
+MERGED_REFRESH_SECONDS = 300
 
 STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-state.json")
 # Her choices, kept apart from the state so a reset never loses them.
@@ -211,6 +216,8 @@ def load_state():
         state["skips"] = raw.get("skips") or None
         # {"seconds", "at"}: today's hours as last counted, and when.
         state["worked"] = raw.get("worked") or None
+        # {"count", "at"}: today's merged PRs as last counted, and when.
+        state["merged"] = raw.get("merged") or None
         return state
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -227,6 +234,7 @@ def fresh_state(now, state=None):
     fresh["stop"] = state["stop"] if state else None
     fresh["skips"] = state["skips"] if state else None
     fresh["worked"] = state["worked"] if state else None
+    fresh["merged"] = state["merged"] if state else None
     return fresh
 
 
@@ -244,6 +252,7 @@ def save_state(state):
     raw["stop"] = state["stop"]
     raw["skips"] = state["skips"]
     raw["worked"] = state["worked"]
+    raw["merged"] = state.get("merged")
     tmp = STATE_PATH + ".tmp"
     with open(tmp, "w") as fh:
         json.dump(raw, fh)
@@ -587,12 +596,13 @@ def upcoming(state, now, settings=None):
     }
 
 
-def view(state, now, settings=None, worked=None):
+def view(state, now, settings=None, worked=None, merged=None):
     """What the band shows, with times in epoch milliseconds for the mod.
     "next" is when each nudge is due; "paused" means she's been away long
     enough that nothing shows until her next prompt restarts the timers;
     "worked" is how many seconds she's worked today, when it was counted;
-    "skips" is how many times she's said "not now" today."""
+    "skips" is how many times she's said "not now" today;
+    "merged" is today's merged PRs against the daily cap, when they were counted."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
@@ -618,6 +628,7 @@ def view(state, now, settings=None, worked=None):
         "paused": paused,
         "worked": int(worked.total_seconds()) if worked is not None else None,
         "skips": skips_today(state, now),
+        "merged": {"count": merged, "cap": DAILY_PR_CAP} if merged is not None else None,
     }
 
 
@@ -645,6 +656,30 @@ def last_counted(state, now, button):
     return timedelta(seconds=cached["seconds"])
 
 
+def last_merged(state, now, button):
+    """Today's merged PRs as last counted, when they'll do instead of asking
+    GitHub again: always for a button press, and for a tick while they're
+    under MERGED_REFRESH_SECONDS old. None when they need counting again."""
+    cached = state.get("merged")
+    if not cached:
+        return None
+    at = datetime.fromisoformat(cached["at"])
+    if at.date() != now.date():
+        return None
+    if button == "tick" and (now - at).total_seconds() >= MERGED_REFRESH_SECONDS:
+        return None
+    return cached["count"]
+
+
+def remember(key, value, now):
+    """Save a fresh count under `key` without losing what other sessions saved."""
+    with locked():
+        latest = load_state()
+        if latest is not None:
+            latest[key] = {**value, "at": now.isoformat()}
+            save_state(latest)
+
+
 def mod(button):
     now = datetime.now().astimezone()
     with locked():
@@ -660,17 +695,18 @@ def mod(button):
         else:
             said = press(state, button, now)
         worked = last_counted(state, now, button)
+        merged = last_merged(state, now, button)
         save_state(state)
+    # Counted outside the lock, so a press in another session isn't kept waiting.
     if worked is None:
-        # Outside the lock, so a press in another session isn't kept waiting.
         worked = worked_so_far(now)
         if worked is not None:
-            with locked():
-                latest = load_state()
-                if latest is not None:
-                    latest["worked"] = {"seconds": int(worked.total_seconds()), "at": now.isoformat()}
-                    save_state(latest)
-    print(json.dumps({**view(state, now, worked=worked), **said}))
+            remember("worked", {"seconds": int(worked.total_seconds())}, now)
+    if merged is None and button == "tick":
+        merged = merged_today(now)
+        if merged is not None:
+            remember("merged", {"count": merged}, now)
+    print(json.dumps({**view(state, now, worked=worked, merged=merged), **said}))
 
 
 def show(kind):
