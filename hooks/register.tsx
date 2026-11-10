@@ -9,7 +9,8 @@
 // with one thing to try against Claude-FOG. Kindness nudges and the "stop for the day" line
 // show in the same band as a single line.
 //
-// The status line under the prompt keeps a running total of today's hours,
+// The status line under the prompt keeps a running total of today's hours
+// and of today's merged PRs against the daily cap (as a progress bar),
 // beside the countdowns to the next nudges and how many she's skipped today.
 // It leads with the session's phase (researching, coding, testing, ...),
 // read from its own tool calls, as a little progress bar.
@@ -100,12 +101,34 @@ export const hours = (seconds: number) => {
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m` : `${minutes}m`
 }
 
-// The status line: how long she's worked today, then how long until the next
+// How many blocks the merged-PR bar has.
+const PR_BAR_BLOCKS = 10
+
+// A count that may have a half in it (a Bod PR counts as half): 12, 12½.
+const prCount = (count: number) => {
+  const whole = Math.floor(count)
+
+  return count - whole >= 0.5 ? `${whole}½` : `${whole}`
+}
+
+// Today's merged PRs against the daily cap, as a progress bar that fills up
+// as she gets closer: "▰▰▰▰▰▰▱▱▱▱ 12/20 PRs". Full, and saying so, once she's there.
+export const prBar = (count: number, cap: number) => {
+  const filled = Math.min(PR_BAR_BLOCKS, Math.round((count / cap) * PR_BAR_BLOCKS))
+  const bar = `${'▰'.repeat(filled)}${'▱'.repeat(PR_BAR_BLOCKS - filled)}`
+  const left = cap - count
+
+  return left > 0 ? `${bar} ${prCount(count)}/${cap} PRs` : `${bar} ${prCount(count)}/${cap} PRs, cap reached`
+}
+
+// The status line: how long she's worked today and how many PRs she's merged
+// against the daily cap, then how long until the next
 // exercise nudge and the next kindness nudge (left out while one is on show),
 // then how many nudges she's put off with "not now" today. Rounded up, so
 // 0:00 is the moment it's due.
 export const countdown = (shown: View | null, at: number) => {
   const worked = typeof shown?.worked === 'number' ? `⏱ ${hours(shown.worked)} today` : null
+  const merged = shown?.merged ? prBar(shown.merged.count, shown.merged.cap) : null
   const parts: string[] = []
 
   if (shown?.paused) {
@@ -126,7 +149,7 @@ export const countdown = (shown: View | null, at: number) => {
     parts.push(`🙈 ${shown.skips} skipped today`)
   }
 
-  const line = [worked, ...parts].filter(part => part !== null)
+  const line = [worked, merged, ...parts].filter(part => part !== null)
 
   return line.length > 0 ? line.join(' · ') : undefined
 }
@@ -222,11 +245,11 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
       return null
     }
 
-    const { nudge, stop, next = null, paused = false, worked = null, skips = 0, ...rest } = JSON.parse(stdout) as Reply
+    const { nudge, stop, next = null, paused = false, worked = null, skips = 0, merged = null, ...rest } = JSON.parse(stdout) as Reply
 
-    await show($, { nudge, stop, next, paused, worked, skips }, rest.now)
+    await show($, { nudge, stop, next, paused, worked, skips, merged }, rest.now)
 
-    return { nudge, stop, next, paused, worked, skips, ...rest }
+    return { nudge, stop, next, paused, worked, skips, merged, ...rest }
   } catch {
     return null
   }

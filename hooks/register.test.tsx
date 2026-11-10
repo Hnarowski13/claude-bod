@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Nudge } from '../types'
+import { prBar } from './register'
 
 const BAND = {
   plugin: 'bod',
@@ -47,6 +48,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     paused: false,
     // Seconds worked today, as bod.py would count them; undefined leaves it out.
     worked: undefined as number | undefined,
+    // Today's merged PRs against the cap, as bod.py would count them; null leaves it out.
+    merged: null as { count: number; cap: number } | null,
     // How many times she's said "not now" today, as bod.py would count them.
     skips: 0,
     // What the status line says, as the engine would draw it.
@@ -176,7 +179,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     return ok(
-      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, skips: world.skips, ...said })
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, merged: world.merged, skips: world.skips, ...said })
     )
   })
 
@@ -255,6 +258,29 @@ test("the status line leads with today's hours, and keeps them while a nudge is 
   await clock.advance(182_000)
 
   expect(world.status).toBe('⏱ 14m today')
+})
+
+test("the status line shows today's merged PRs as a bar filling up to the cap", async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000 }
+  world.worked = 2 * 3600 + 5 * 60
+  world.merged = { count: 12.5, cap: 20 }
+  await $.session.start(SESSION)
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('⏱ 2h 05m today · ▰▰▰▰▰▰▱▱▱▱ 12½/20 PRs · 🤸 move in 3:01')
+
+  world.merged = { count: 21, cap: 20 }
+  await clock.advance(5_000)
+
+  expect(world.status).toBe('⏱ 2h 05m today · ▰▰▰▰▰▰▰▰▰▰ 21/20 PRs, cap reached · 🤸 move in 2:56')
+})
+
+test('the PR bar starts empty and counts halves', () => {
+  expect(prBar(0, 20)).toBe('▱▱▱▱▱▱▱▱▱▱ 0/20 PRs')
+  expect(prBar(0.5, 20)).toBe('▱▱▱▱▱▱▱▱▱▱ 0½/20 PRs')
+  expect(prBar(20, 20)).toBe('▰▰▰▰▰▰▰▰▰▰ 20/20 PRs, cap reached')
 })
 
 test("the status line leads with this session's phase, read from its own tool calls", async ($, on) => {
