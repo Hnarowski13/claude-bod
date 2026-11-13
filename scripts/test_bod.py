@@ -751,11 +751,11 @@ class Worked(unittest.TestCase):
 
 class HardCap(unittest.TestCase):
     def test_under_the_cap_prompts_go_through(self):
-        self.assertIsNone(bod.view(working(), NOW, worked=timedelta(hours=1, minutes=59))["locked"])
+        self.assertIsNone(bod.view(working(), NOW, worked=timedelta(hours=2, minutes=59))["locked"])
 
     def test_past_the_cap_prompts_are_refused_until_midnight(self):
-        locked = bod.view(working(), NOW, worked=timedelta(hours=2, minutes=1))["locked"]
-        self.assertIn("2h 01m", locked)
+        locked = bod.view(working(), NOW, worked=timedelta(hours=3, minutes=1))["locked"]
+        self.assertIn("3h 01m", locked)
         self.assertIn("midnight", locked)
 
     def test_hours_that_could_not_be_counted_never_lock(self):
