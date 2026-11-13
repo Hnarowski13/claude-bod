@@ -5,7 +5,7 @@ description: Check how long Helena has been working today and tell her whether t
 
 # Work check
 
-Helena doesn't want to be prompting AI for more than 2 hours in one day. Past that, Bod refuses
+Helena doesn't want to be prompting AI for more than 3 hours in one day. Past that, Bod refuses
 every prompt until midnight.
 This skill looks at how long she's been at it and gives her a straight answer.
 
@@ -24,7 +24,7 @@ done away from Claude. Treat them as rough.
 
 Answer in two or three lines, verdict first, then the numbers behind it.
 
-- **`STOP`** (over the 2 hour cap): tell her plainly to stop for the day. Give
+- **`STOP`** (over the 3 hour cap): tell her plainly to stop for the day. Give
   the hours, say stopping now is the right call and that the backlog will
   still be there tomorrow. Recommend it, don't present it as an even choice.
   It's still her call: be firm and caring, not preachy. If she has work in

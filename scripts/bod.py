@@ -89,7 +89,7 @@ CAP_CHECK_MINUTES = 30
 CHECK_IN_MINUTES = 45
 BREAK_MINUTES = 20
 # Hours of Claude time a day. Past them, prompts are refused until midnight.
-DAILY_CAP_HOURS = 2
+DAILY_CAP_HOURS = 3
 STRETCH_LIMIT_MINUTES = 90
 # After a done, how long the band stays empty before the next nudge may show.
 QUIET_SECONDS = 60
