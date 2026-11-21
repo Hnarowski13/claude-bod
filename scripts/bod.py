@@ -53,7 +53,7 @@ Entry points:
   bod.py snooze 2 | 5 | 10 | 15
                   How many minutes "not now" puts a nudge off for (bare
                   `snooze` is the button itself).
-  bod.py focus [15 | 30 | 45 | 60 | 75 | 90] <what she wants to get done>
+  bod.py focus [5 | 10 | 15 | 30 | 45 | 60 | 75 | 90] <what she wants to get done>
                   Starts a focus session (60 minutes when no length is
                   given). Prompts only go through while one runs; when its
                   time is up she gets a few minutes to wrap up, then a break.
@@ -110,7 +110,7 @@ MERGED_REFRESH_SECONDS = 300
 # purpose with `/bod focus <minutes> <what she wants to get done>`. When its
 # time is up she gets WRAP_UP_MINUTES to wrap up, then a FOCUS_BREAK_MINUTES
 # break with prompts refused before the next one can start.
-FOCUS_CHOICES = (15, 30, 45, 60, 75, 90)
+FOCUS_CHOICES = (5, 10, 15, 30, 45, 60, 75, 90)
 FOCUS_DEFAULT_MINUTES = 60
 WRAP_UP_MINUTES = 5
 FOCUS_BREAK_MINUTES = 10
