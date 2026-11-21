@@ -25,8 +25,21 @@ export type View = {
   skips?: number
   /** Today's merged PRs (a Bod PR counts as half) and the daily cap, for the status line; null when GitHub couldn't be asked. */
   merged?: { count: number; cap: number } | null
-  /** Why prompts are refused: today's hours are past the hard cap. Null until then. */
+  /** Where the focus session stands: running, wrapping up, on the break after, or none running. */
+  focus?: Focus | null
+  /** Why prompts are refused: today's hours are past the hard cap, or no focus session is running. Null while they go through. */
   locked?: string | null
+}
+
+/** The focus session, as `bod.py` prints it. */
+export type Focus = {
+  phase: 'working' | 'wrap-up' | 'break' | 'none'
+  /** When this phase ends, in epoch milliseconds; null when no session is running. */
+  ends: number | null
+  /** What she said she wants to get done; null when no session is running. */
+  goal: string | null
+  /** The band's line: time to wrap up, or why prompts are refused; null while the session runs. */
+  line: string | null
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */
