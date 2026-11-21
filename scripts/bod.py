@@ -53,6 +53,10 @@ Entry points:
   bod.py snooze 2 | 5 | 10 | 15
                   How many minutes "not now" puts a nudge off for (bare
                   `snooze` is the button itself).
+  bod.py focus [15 | 30 | 45 | 60 | 75 | 90] <what she wants to get done>
+                  Starts a focus session (60 minutes when no length is
+                  given). Prompts only go through while one runs; when its
+                  time is up she gets a few minutes to wrap up, then a break.
   bod.py settings What Claude Bod is set to, in a sentence.
   bod.py choices  Her settings and what each may be, as JSON, for the
                   mod's /bod config form.
@@ -102,6 +106,14 @@ WORKED_REFRESH_SECONDS = 60
 DAILY_PR_CAP = 15
 # How often a tick asks GitHub again for today's merged PRs (a network call).
 MERGED_REFRESH_SECONDS = 300
+# Focus sessions: prompts only go through while one is running, started on
+# purpose with `/bod focus <minutes> <what she wants to get done>`. When its
+# time is up she gets WRAP_UP_MINUTES to wrap up, then a FOCUS_BREAK_MINUTES
+# break with prompts refused before the next one can start.
+FOCUS_CHOICES = (15, 30, 45, 60, 75, 90)
+FOCUS_DEFAULT_MINUTES = 60
+WRAP_UP_MINUTES = 5
+FOCUS_BREAK_MINUTES = 10
 
 STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-state.json")
 # Her choices, kept apart from the state so a reset never loses them.
@@ -221,6 +233,8 @@ def load_state():
         state["worked"] = raw.get("worked") or None
         # {"count", "at"}: today's merged PRs as last counted, and when.
         state["merged"] = raw.get("merged") or None
+        # {"started", "minutes", "goal"}: the last focus session she started.
+        state["focus"] = raw.get("focus") or None
         return state
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -238,6 +252,8 @@ def fresh_state(now, state=None):
     fresh["skips"] = state["skips"] if state else None
     fresh["worked"] = state["worked"] if state else None
     fresh["merged"] = state["merged"] if state else None
+    # A focus session runs on the clock, not on prompts: a break doesn't end it.
+    fresh["focus"] = state.get("focus") if state else None
     return fresh
 
 
@@ -256,6 +272,7 @@ def save_state(state):
     raw["skips"] = state["skips"]
     raw["worked"] = state["worked"]
     raw["merged"] = state.get("merged")
+    raw["focus"] = state.get("focus")
     tmp = STATE_PATH + ".tmp"
     with open(tmp, "w") as fh:
         json.dump(raw, fh)
@@ -310,6 +327,82 @@ def lock_text(worked):
         f"You've been at this about {fmt(worked)} today, past your {DAILY_CAP_HOURS} hour cap, "
         "so Claude is done for today. It opens again at midnight. Go love yourself 💛"
     )
+
+
+FOCUS_HOW = (
+    "/bod focus <minutes> <what you want to get done>, e.g. /bod focus 60 fix the sorting bug "
+    f"(minutes: {', '.join(map(str, FOCUS_CHOICES))})"
+)
+
+
+def time_of_day(when):
+    """3:42 pm."""
+    return when.strftime("%-I:%M %p").lower()
+
+
+def focus_phase(state, now):
+    """Where the focus session stands, as (phase, when that phase ends):
+    "working" until its minutes are up, "wrap-up" for WRAP_UP_MINUTES after,
+    "break" for FOCUS_BREAK_MINUTES after that, and "none" (ending None) when
+    no session is running and one may start."""
+    focus = state.get("focus")
+    if not focus:
+        return "none", None
+    work_ends = datetime.fromisoformat(focus["started"]) + timedelta(minutes=focus["minutes"])
+    wrap_up_ends = work_ends + timedelta(minutes=WRAP_UP_MINUTES)
+    break_ends = wrap_up_ends + timedelta(minutes=FOCUS_BREAK_MINUTES)
+    if now < work_ends:
+        return "working", work_ends
+    if now < wrap_up_ends:
+        return "wrap-up", wrap_up_ends
+    if now < break_ends:
+        return "break", break_ends
+    return "none", None
+
+
+def focus_lock_text(phase, ends):
+    """Why a prompt is refused for want of a focus session, or None when it may go through."""
+    if phase == "none":
+        return f"No focus session running. Start one on purpose: {FOCUS_HOW}."
+    if phase == "break":
+        return f"Focus session over: take your break. The next one can start at {time_of_day(ends)}."
+    return None
+
+
+def start_focus(state, now, args):
+    """`/bod focus [minutes] <goal>`: starts a focus session when none is
+    running and the break after the last one is over. Returns what to tell her."""
+    phase, ends = focus_phase(state, now)
+    if phase == "working":
+        return f"A focus session is already running, {fmt(ends - now)} left: {state['focus']['goal']}."
+    if phase == "wrap-up":
+        return (f"Your session's time is up: wrap up, then take your {FOCUS_BREAK_MINUTES} minute break. "
+                f"The next one can start at {time_of_day(ends + timedelta(minutes=FOCUS_BREAK_MINUTES))}.")
+    if phase == "break":
+        return f"Break first: the next focus session can start at {time_of_day(ends)}."
+
+    minutes = FOCUS_DEFAULT_MINUTES
+    if args and args[0].isdigit():
+        minutes, args = int(args[0]), args[1:]
+    if minutes not in FOCUS_CHOICES:
+        return f"Pick one of: {', '.join(map(str, FOCUS_CHOICES))} minutes."
+    goal = " ".join(args).strip()
+    if not goal:
+        return f"What do you want to get done this session? Say it after the minutes: {FOCUS_HOW}."
+
+    state["focus"] = {"started": now.isoformat(), "minutes": minutes, "goal": goal}
+    work_ends = now + timedelta(minutes=minutes)
+    return (f"🎯 Focus session started: {minutes} minutes for \"{goal}\". "
+            f"It ends at {time_of_day(work_ends)}, then you get {WRAP_UP_MINUTES} minutes to wrap up.")
+
+
+def focus(args):
+    now = datetime.now().astimezone()
+    with locked():
+        state = load_state() or fresh_state(now)
+        said = start_focus(state, now, args)
+        save_state(state)
+    print(said)
 
 
 def load_settings():
@@ -614,12 +707,16 @@ def view(state, now, settings=None, worked=None, merged=None):
     "worked" is how many seconds she's worked today, when it was counted;
     "skips" is how many times she's said "not now" today;
     "merged" is today's merged PRs against the daily cap, when they were counted;
-    "locked" is why prompts are refused once today's hours pass the hard cap,
-    and None until then (or when the hours couldn't be counted)."""
+    "focus" is where the focus session stands (its phase, when that ends, its goal);
+    "locked" is why prompts are refused: today's hours are past the hard cap,
+    or no focus session is running. None while they may go through."""
 
     def ms(when):
         return int(when.timestamp() * 1000)
 
+    phase, phase_ends = focus_phase(state, now)
+    goal = state["focus"]["goal"] if phase != "none" else None
+    cap_lock = lock_text(worked) if worked is not None and over_cap(worked) else None
     paused = away(state, now)
     due_at = None if paused else upcoming(state, now, settings)
     nudge = state["pending"]
@@ -642,7 +739,8 @@ def view(state, now, settings=None, worked=None, merged=None):
         "worked": int(worked.total_seconds()) if worked is not None else None,
         "skips": skips_today(state, now),
         "merged": {"count": merged, "cap": DAILY_PR_CAP} if merged is not None else None,
-        "locked": lock_text(worked) if worked is not None and over_cap(worked) else None,
+        "focus": {"phase": phase, "ends": ms(phase_ends) if phase_ends else None, "goal": goal},
+        "locked": cap_lock or focus_lock_text(phase, phase_ends),
     }
 
 
@@ -772,6 +870,8 @@ def info(settings):
         f"- Snooze: {settings['snooze']} minutes · /bod snooze {'|'.join(map(str, SNOOZE_CHOICES))}",
         f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
         f"- Daily cap: {DAILY_CAP_HOURS} hours, then prompts are refused until midnight",
+        (f"- Focus sessions: prompts only go through during one, then {WRAP_UP_MINUTES} minutes to wrap up "
+         f"and a {FOCUS_BREAK_MINUTES} minute break · {FOCUS_HOW}"),
         f"- Take a break after {STRETCH_LIMIT_MINUTES} minutes without one (/work-check)",
     ])
 
@@ -914,6 +1014,8 @@ if __name__ == "__main__":
         mod(mode)
     elif mode in ("level", "every", "kind", "claudes", "snooze", "move", "check"):
         choose(sys.argv[1:])
+    elif mode == "focus":
+        focus(sys.argv[2:])
     elif mode == "settings":
         print(describe(load_settings()))
     elif mode == "choices":

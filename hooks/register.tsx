@@ -17,6 +17,10 @@
 //
 // Past the daily cap on Claude time, every prompt is refused until midnight.
 //
+// Prompts only go through during a focus session, started on purpose with
+// `/bod focus <minutes> <what she wants to get done>`. When its time is up
+// she gets 5 minutes to wrap up, then a 10 minute break before the next.
+//
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
 //
@@ -27,7 +31,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
-import type { Form, Nudge, Reply, Setting, View } from '../types'
+import type { Focus, Form, Nudge, Reply, Setting, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
@@ -123,6 +127,53 @@ export const prBar = (count: number, cap: number) => {
   return left > 0 ? `${bar} ${prCount(count)}/${cap} PRs` : `${bar} ${prCount(count)}/${cap} PRs, cap reached`
 }
 
+// The longest goal the status line shows whole; a longer one is cut short with "…".
+const GOAL_COLUMNS = 40
+
+const shortGoal = (goal: string) => (goal.length > GOAL_COLUMNS ? `${goal.slice(0, GOAL_COLUMNS - 1)}…` : goal)
+
+// The focus session in the status line: time left and the goal while it
+// runs, then the wrap-up and the break counting down, or how to start one.
+export const focusPart = (focus: Focus | null | undefined, at: number) => {
+  if (!focus) {
+    return null
+  }
+
+  const left = focus.ends === null ? 0 : clock(Math.max(0, Math.ceil((focus.ends - at) / 1000)))
+
+  if (focus.phase === 'working') {
+    return `🎯 ${left} left: ${shortGoal(focus.goal ?? '')}`
+  }
+
+  if (focus.phase === 'wrap-up') {
+    return `⏰ wrap up: ${left} left`
+  }
+
+  if (focus.phase === 'break') {
+    return `☕ break: ${left} left`
+  }
+
+  return '🎯 no focus session: /bod focus'
+}
+
+// The band's line for the focus session, when it has something to say:
+// time to wrap up, the break, or that no session is running.
+export const focusLine = (focus: Focus | null | undefined) => {
+  if (!focus || focus.phase === 'working') {
+    return null
+  }
+
+  if (focus.phase === 'wrap-up') {
+    return `⏰ Time's up. You have 5 minutes to wrap up: leave notes for next time. You set out to: ${focus.goal}`
+  }
+
+  if (focus.phase === 'break') {
+    return '☕ Break time. Step away from the screen; Claude opens again when the break is over.'
+  }
+
+  return '🎯 No focus session running. What do you want to get done? /bod focus 60 <what you want to get done>'
+}
+
 // The status line: how long she's worked today and how many PRs she's merged
 // against the daily cap, then how long until the next
 // exercise nudge and the next kindness nudge (left out while one is on show),
@@ -151,7 +202,7 @@ export const countdown = (shown: View | null, at: number) => {
     parts.push(`🙈 ${shown.skips} skipped today`)
   }
 
-  const line = [worked, merged, ...parts].filter(part => part !== null)
+  const line = [focusPart(shown?.focus, at), worked, merged, ...parts].filter(part => part !== null)
 
   return line.length > 0 ? line.join(' · ') : undefined
 }
@@ -247,11 +298,11 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
       return null
     }
 
-    const { nudge, stop, next = null, paused = false, worked = null, skips = 0, merged = null, ...rest } = JSON.parse(stdout) as Reply
+    const { nudge, stop, next = null, paused = false, worked = null, skips = 0, merged = null, focus = null, ...rest } = JSON.parse(stdout) as Reply
 
-    await show($, { nudge, stop, next, paused, worked, skips, merged }, rest.now)
+    await show($, { nudge, stop, next, paused, worked, skips, merged, focus }, rest.now)
 
-    return { nudge, stop, next, paused, worked, skips, merged, ...rest }
+    return { nudge, stop, next, paused, worked, skips, merged, focus, ...rest }
   } catch {
     return null
   }
@@ -524,8 +575,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
-      argumentHint: '[config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
+      description: 'Start a focus session (focus <minutes> <goal>), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
+      argumentHint: '[focus 15|30|45|60|75|90 <goal>] [config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -554,6 +605,16 @@ export const register: Register = on => {
 
     if (setting === 'config') {
       return { text: await openConfig($) }
+    }
+
+    // `/bod focus 60 fix the sorting bug`: bod.py starts the session (or says
+    // why not), and a tick puts it in the status line straight away.
+    if (setting === 'focus') {
+      const said = await settings($, args)
+
+      await bod($, 'tick')
+
+      return { text: said }
     }
 
     const reply = kindNow ? await bod($, 'kindnow') : moveNow ? await bod($, 'now') : null
@@ -586,7 +647,8 @@ export const register: Register = on => {
       return { drop: over }
     }
 
-    if (script === null) {
+    // `/bod` itself is never locked: it's how she starts a focus session.
+    if (script === null || e.command?.name === 'bod') {
       return next(e)
     }
 
@@ -601,7 +663,8 @@ export const register: Register = on => {
       return next(e)
     }
 
-    // Past today's hard cap on Claude time: nothing goes through until midnight.
+    // Past today's hard cap on Claude time (nothing goes through until
+    // midnight), or no focus session running.
     if (reply.locked) {
       return { drop: `🛑 ${reply.locked}` }
     }
@@ -658,7 +721,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, view)
 
-    if (e.props.hasSurvey || shown === null || (shown.nudge === null && shown.stop === null)) {
+    const focus = focusLine(shown?.focus)
+
+    if (e.props.hasSurvey || shown === null || (shown.nudge === null && shown.stop === null && focus === null)) {
       return next(e)
     }
 
@@ -671,6 +736,10 @@ export const register: Register = on => {
 
     if (stop !== null) {
       rows.push(<Text color="warning">🛑 {stop}</Text>)
+    }
+
+    if (focus !== null) {
+      rows.push(<Text color="warning">{focus}</Text>)
     }
 
     // A nudge that locks gets the box when the band has the rows for it.

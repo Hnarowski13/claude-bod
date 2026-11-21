@@ -749,9 +749,15 @@ class Worked(unittest.TestCase):
                 bod.STATE_PATH = old
 
 
+def focusing(state, started=NOW, minutes=60, goal="fix the sorting bug"):
+    """`state` with a focus session that started at `started`."""
+    state["focus"] = {"started": started.isoformat(), "minutes": minutes, "goal": goal}
+    return state
+
+
 class HardCap(unittest.TestCase):
     def test_under_the_cap_prompts_go_through(self):
-        self.assertIsNone(bod.view(working(), NOW, worked=timedelta(hours=2, minutes=59))["locked"])
+        self.assertIsNone(bod.view(focusing(working()), NOW, worked=timedelta(hours=2, minutes=59))["locked"])
 
     def test_past_the_cap_prompts_are_refused_until_midnight(self):
         locked = bod.view(working(), NOW, worked=timedelta(hours=3, minutes=1))["locked"]
@@ -759,7 +765,90 @@ class HardCap(unittest.TestCase):
         self.assertIn("midnight", locked)
 
     def test_hours_that_could_not_be_counted_never_lock(self):
-        self.assertIsNone(bod.view(working(), NOW)["locked"])
+        self.assertIsNone(bod.view(focusing(working()), NOW)["locked"])
+
+    def test_the_cap_comes_before_the_focus_session(self):
+        locked = bod.view(focusing(working()), NOW, worked=timedelta(hours=3, minutes=1))["locked"]
+        self.assertIn("midnight", locked)
+
+
+class Focus(unittest.TestCase):
+    def test_no_session_refuses_prompts_and_says_how_to_start_one(self):
+        shown = bod.view(working(), NOW)
+        self.assertEqual(shown["focus"], {"phase": "none", "ends": None, "goal": None})
+        self.assertIn("/bod focus", shown["locked"])
+
+    def test_during_the_session_prompts_go_through(self):
+        shown = bod.view(focusing(working(), started=NOW - minutes(59)), NOW)
+        self.assertIsNone(shown["locked"])
+        self.assertEqual(shown["focus"]["phase"], "working")
+        self.assertEqual(shown["focus"]["goal"], "fix the sorting bug")
+        self.assertEqual(shown["focus"]["ends"], int((NOW + minutes(1)).timestamp() * 1000))
+
+    def test_five_minutes_to_wrap_up_with_prompts_still_going_through(self):
+        shown = bod.view(focusing(working(), started=NOW - minutes(64)), NOW)
+        self.assertIsNone(shown["locked"])
+        self.assertEqual(shown["focus"]["phase"], "wrap-up")
+        self.assertEqual(shown["focus"]["ends"], int((NOW + minutes(1)).timestamp() * 1000))
+
+    def test_then_a_ten_minute_break_with_prompts_refused(self):
+        shown = bod.view(focusing(working(), started=NOW - minutes(65)), NOW)
+        self.assertEqual(shown["focus"]["phase"], "break")
+        self.assertIn("10:10 am", shown["locked"])
+
+    def test_after_the_break_a_new_session_is_needed(self):
+        shown = bod.view(focusing(working(), started=NOW - minutes(75)), NOW)
+        self.assertEqual(shown["focus"]["phase"], "none")
+        self.assertIn("/bod focus", shown["locked"])
+
+    def test_start_with_minutes_and_a_goal(self):
+        state = working()
+        said = bod.start_focus(state, NOW, ["30", "fix", "the", "sorting", "bug"])
+        self.assertIn("30 minutes", said)
+        self.assertIn("10:30 am", said)
+        self.assertEqual(state["focus"], {"started": NOW.isoformat(), "minutes": 30, "goal": "fix the sorting bug"})
+
+    def test_sixty_minutes_when_no_length_is_given(self):
+        state = working()
+        bod.start_focus(state, NOW, ["write", "tests"])
+        self.assertEqual(state["focus"]["minutes"], 60)
+
+    def test_a_goal_is_required(self):
+        state = working()
+        said = bod.start_focus(state, NOW, ["60"])
+        self.assertIn("What do you want to get done", said)
+        self.assertIsNone(state.get("focus"))
+
+    def test_only_the_listed_lengths(self):
+        state = working()
+        self.assertIn("Pick one of", bod.start_focus(state, NOW, ["20", "stuff"]))
+        self.assertIsNone(state.get("focus"))
+
+    def test_no_new_session_while_one_runs_wraps_up_or_breaks(self):
+        for ago in (10, 62, 70):
+            state = focusing(working(), started=NOW - minutes(ago))
+            before = dict(state["focus"])
+            bod.start_focus(state, NOW, ["30", "something", "else"])
+            self.assertEqual(state["focus"], before)
+
+    def test_a_new_session_once_the_break_is_over(self):
+        state = focusing(working(), started=NOW - minutes(75))
+        bod.start_focus(state, NOW, ["15", "next", "thing"])
+        self.assertEqual(state["focus"]["goal"], "next thing")
+
+    def test_a_break_away_keeps_the_session(self):
+        state = focusing(working())
+        self.assertEqual(bod.fresh_state(NOW, state)["focus"], state["focus"])
+
+    def test_the_session_survives_the_state_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            old = bod.STATE_PATH
+            bod.STATE_PATH = os.path.join(folder, "state.json")
+            try:
+                bod.save_state(focusing(working()))
+                self.assertEqual(bod.load_state()["focus"]["goal"], "fix the sorting bug")
+            finally:
+                bod.STATE_PATH = old
 
 
 class Merged(unittest.TestCase):

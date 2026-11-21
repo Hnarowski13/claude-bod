@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import type { Nudge } from '../types'
+import type { Focus, Nudge } from '../types'
 import { prBar } from './register'
 
 const BAND = {
@@ -52,6 +52,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     merged: null as { count: number; cap: number } | null,
     // Why bod.py says prompts are refused (past the daily cap); null lets them through.
     locked: null as string | null,
+    // The focus session, as bod.py would print it; null leaves it out.
+    focus: null as Focus | null,
     // How many times she's said "not now" today, as bod.py would count them.
     skips: 0,
     // What the status line says, as the engine would draw it.
@@ -147,6 +149,14 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
     }
 
+    if (command === 'focus') {
+      world.commands.push(e.argv.slice(2).join(' '))
+      world.focus = { phase: 'working', ends: clock.now() + 60 * 60 * 1000, goal: e.argv.slice(4).join(' ') }
+      world.locked = null
+
+      return ok('🎯 Focus session started.\n')
+    }
+
     if (world.isBroken) {
       return { value: { exitCode: 1, stdout: '', stderr: 'boom', isStdoutTruncated: false, isStderrTruncated: false } }
     }
@@ -181,7 +191,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     }
 
     return ok(
-      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, merged: world.merged, locked: world.locked, skips: world.skips, ...said })
+      JSON.stringify({ now: clock.now(), nudge: world.nudge, stop: null, next: world.next, paused: world.paused, worked: world.worked, merged: world.merged, focus: world.focus, locked: world.locked, skips: world.skips, ...said })
     )
   })
 
@@ -795,4 +805,76 @@ test('/bod with something it does not know says so and points at info and config
     text: 'Claude Bod doesn\'t know "/bod can i set my snooze?". /bod info lists every setting and /bod config sets them all in one form.',
   })
   expect(await $.command.run(BOD('snooze 10'))).toMatchObject({ text: 'Claude Bod is on 10.' })
+})
+
+test('/bod focus starts a session through bod.py, and the status line leads with its time left and goal', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('focus 60 fix the sorting bug'))).toMatchObject({ text: '🎯 Focus session started.' })
+  expect(world.commands).toContain('focus 60 fix the sorting bug')
+
+  await clock.advance(1000)
+
+  expect(world.status).toMatch(/^🎯 59:59 left: fix the sorting bug/)
+})
+
+test('a long goal is cut short in the status line', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.focus = { phase: 'working', ends: START + 600_000, goal: 'a'.repeat(60) }
+  await $.session.start(SESSION)
+  await clock.advance(1000)
+
+  expect(world.status).toContain(`${'a'.repeat(39)}…`)
+})
+
+test('with no focus session running, prompts are refused but /bod still goes through', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.focus = { phase: 'none', ends: null, goal: null }
+  world.locked = 'No focus session running. Start one on purpose: /bod focus 60 <goal>.'
+  await $.session.start(SESSION)
+
+  expect((await $.prompt.submit(PROMPT)).drop).toBe('🛑 No focus session running. Start one on purpose: /bod focus 60 <goal>.')
+
+  const command = await $.prompt.submit({ ...PROMPT, text: '/bod focus 60 x', command: { name: 'bod', args: 'focus 60 x' } })
+
+  expect(command.drop).toBeUndefined()
+
+  await clock.advance(1000)
+
+  expect(world.status).toMatch(/^🎯 no focus session: \/bod focus/)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /No focus session running/ })).toBeDefined()
+})
+
+test("when the session's time is up, the band says to wrap up and repeats the goal", async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.focus = { phase: 'wrap-up', ends: START + 300_000, goal: 'fix the sorting bug' }
+  await $.session.start(SESSION)
+  await clock.advance(1000)
+
+  expect(world.status).toMatch(/^⏰ wrap up: 4:59 left/)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /You set out to: fix the sorting bug/ })).toBeDefined()
+  expect((await $.prompt.submit(PROMPT)).drop).toBeUndefined()
+})
+
+test('the break counts down in the status line', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.focus = { phase: 'break', ends: START + 600_000, goal: 'fix the sorting bug' }
+  await $.session.start(SESSION)
+  await clock.advance(1000)
+
+  expect(world.status).toMatch(/^☕ break: 9:59 left/)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /Break time/ })).toBeDefined()
 })
