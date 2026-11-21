@@ -38,6 +38,8 @@ export type Focus = {
   ends: number | null
   /** What she said she wants to get done; null when no session is running. */
   goal: string | null
+  /** The band's line: time to wrap up, or why prompts are refused; null while the session runs. */
+  line: string | null
 }
 
 /** What `bod.py tick` and each button print: the view, and what just happened. */

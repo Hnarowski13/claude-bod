@@ -54,6 +54,9 @@ type Drawing = Pick<Elements['terminal'], 'Box' | 'Button' | 'Text'>
 export const clock = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
+// How long until `until`, as a clock, rounded up so 0:00 is the moment it's reached.
+const timeLeft = (until: number, at: number) => clock(Math.max(0, Math.ceil((until - at) / 1000)))
+
 // The exercises in a set, in order: bod.py joins them with ", then ".
 export const steps = (nudge: Nudge) => nudge.text.split(', then ')
 
@@ -139,7 +142,11 @@ export const focusPart = (focus: Focus | null | undefined, at: number) => {
     return null
   }
 
-  const left = focus.ends === null ? 0 : clock(Math.max(0, Math.ceil((focus.ends - at) / 1000)))
+  if (focus.phase === 'none' || focus.ends === null) {
+    return '🎯 no focus session: /bod focus'
+  }
+
+  const left = timeLeft(focus.ends, at)
 
   if (focus.phase === 'working') {
     return `🎯 ${left} left: ${shortGoal(focus.goal ?? '')}`
@@ -149,29 +156,7 @@ export const focusPart = (focus: Focus | null | undefined, at: number) => {
     return `⏰ wrap up: ${left} left`
   }
 
-  if (focus.phase === 'break') {
-    return `☕ break: ${left} left`
-  }
-
-  return '🎯 no focus session: /bod focus'
-}
-
-// The band's line for the focus session, when it has something to say:
-// time to wrap up, the break, or that no session is running.
-export const focusLine = (focus: Focus | null | undefined) => {
-  if (!focus || focus.phase === 'working') {
-    return null
-  }
-
-  if (focus.phase === 'wrap-up') {
-    return `⏰ Time's up. You have 5 minutes to wrap up: leave notes for next time. You set out to: ${focus.goal}`
-  }
-
-  if (focus.phase === 'break') {
-    return '☕ Break time. Step away from the screen; Claude opens again when the break is over.'
-  }
-
-  return '🎯 No focus session running. What do you want to get done? /bod focus 60 <what you want to get done>'
+  return `☕ break: ${left} left`
 }
 
 // The status line: how long she's worked today and how many PRs she's merged
@@ -190,11 +175,11 @@ export const countdown = (shown: View | null, at: number) => {
     const { move, kind } = shown.next
 
     if (move !== undefined) {
-      parts.push(`${ICONS.move} move in ${clock(Math.max(0, Math.ceil((move - at) / 1000)))}`)
+      parts.push(`${ICONS.move} move in ${timeLeft(move, at)}`)
     }
 
     if (kind !== undefined) {
-      parts.push(`${ICONS.kind} kind in ${clock(Math.max(0, Math.ceil((kind - at) / 1000)))}`)
+      parts.push(`${ICONS.kind} kind in ${timeLeft(kind, at)}`)
     }
   }
 
@@ -721,7 +706,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, view)
 
-    const focus = focusLine(shown?.focus)
+    // bod.py's line for the focus session: time to wrap up, or why prompts are refused.
+    const focus = shown?.focus?.line ?? null
 
     if (e.props.hasSurvey || shown === null || (shown.nudge === null && shown.stop === null && focus === null)) {
       return next(e)

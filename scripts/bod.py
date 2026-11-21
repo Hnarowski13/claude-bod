@@ -253,7 +253,7 @@ def fresh_state(now, state=None):
     fresh["worked"] = state["worked"] if state else None
     fresh["merged"] = state["merged"] if state else None
     # A focus session runs on the clock, not on prompts: a break doesn't end it.
-    fresh["focus"] = state.get("focus") if state else None
+    fresh["focus"] = state["focus"] if state else None
     return fresh
 
 
@@ -358,6 +358,16 @@ def focus_phase(state, now):
     if now < break_ends:
         return "break", break_ends
     return "none", None
+
+
+def focus_line(phase, ends, goal):
+    """The band's line for the focus session: time to wrap up, or why prompts
+    are refused. None while the session is running."""
+    if phase == "wrap-up":
+        return (f"⏰ Time's up. You have {WRAP_UP_MINUTES} minutes to wrap up: leave notes for next time. "
+                f"You set out to: {goal}")
+    lock = focus_lock_text(phase, ends)
+    return f"🎯 {lock}" if lock else None
 
 
 def focus_lock_text(phase, ends):
@@ -739,7 +749,8 @@ def view(state, now, settings=None, worked=None, merged=None):
         "worked": int(worked.total_seconds()) if worked is not None else None,
         "skips": skips_today(state, now),
         "merged": {"count": merged, "cap": DAILY_PR_CAP} if merged is not None else None,
-        "focus": {"phase": phase, "ends": ms(phase_ends) if phase_ends else None, "goal": goal},
+        "focus": {"phase": phase, "ends": ms(phase_ends) if phase_ends else None, "goal": goal,
+                  "line": focus_line(phase, phase_ends, goal)},
         "locked": cap_lock or focus_lock_text(phase, phase_ends),
     }
 

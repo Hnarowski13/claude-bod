@@ -775,20 +775,25 @@ class HardCap(unittest.TestCase):
 class Focus(unittest.TestCase):
     def test_no_session_refuses_prompts_and_says_how_to_start_one(self):
         shown = bod.view(working(), NOW)
-        self.assertEqual(shown["focus"], {"phase": "none", "ends": None, "goal": None})
+        self.assertEqual(shown["focus"]["phase"], "none")
+        self.assertIsNone(shown["focus"]["goal"])
         self.assertIn("/bod focus", shown["locked"])
+        self.assertIn(shown["locked"], shown["focus"]["line"])
 
     def test_during_the_session_prompts_go_through(self):
         shown = bod.view(focusing(working(), started=NOW - minutes(59)), NOW)
         self.assertIsNone(shown["locked"])
         self.assertEqual(shown["focus"]["phase"], "working")
         self.assertEqual(shown["focus"]["goal"], "fix the sorting bug")
+        self.assertIsNone(shown["focus"]["line"])
         self.assertEqual(shown["focus"]["ends"], int((NOW + minutes(1)).timestamp() * 1000))
 
     def test_five_minutes_to_wrap_up_with_prompts_still_going_through(self):
         shown = bod.view(focusing(working(), started=NOW - minutes(64)), NOW)
         self.assertIsNone(shown["locked"])
         self.assertEqual(shown["focus"]["phase"], "wrap-up")
+        self.assertIn("5 minutes to wrap up", shown["focus"]["line"])
+        self.assertIn("fix the sorting bug", shown["focus"]["line"])
         self.assertEqual(shown["focus"]["ends"], int((NOW + minutes(1)).timestamp() * 1000))
 
     def test_then_a_ten_minute_break_with_prompts_refused(self):

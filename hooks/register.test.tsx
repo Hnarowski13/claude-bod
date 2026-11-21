@@ -151,7 +151,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     if (command === 'focus') {
       world.commands.push(e.argv.slice(2).join(' '))
-      world.focus = { phase: 'working', ends: clock.now() + 60 * 60 * 1000, goal: e.argv.slice(4).join(' ') }
+      world.focus = { phase: 'working', ends: clock.now() + 60 * 60 * 1000, goal: e.argv.slice(4).join(' '), line: null }
       world.locked = null
 
       return ok('🎯 Focus session started.\n')
@@ -823,7 +823,7 @@ test('/bod focus starts a session through bod.py, and the status line leads with
 test('a long goal is cut short in the status line', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.focus = { phase: 'working', ends: START + 600_000, goal: 'a'.repeat(60) }
+  world.focus = { phase: 'working', ends: START + 600_000, goal: 'a'.repeat(60), line: null }
   await $.session.start(SESSION)
   await clock.advance(1000)
 
@@ -833,7 +833,7 @@ test('a long goal is cut short in the status line', async ($, on) => {
 test('with no focus session running, prompts are refused but /bod still goes through', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.focus = { phase: 'none', ends: null, goal: null }
+  world.focus = { phase: 'none', ends: null, goal: null, line: '🎯 No focus session running.' }
   world.locked = 'No focus session running. Start one on purpose: /bod focus 60 <goal>.'
   await $.session.start(SESSION)
 
@@ -855,7 +855,7 @@ test('with no focus session running, prompts are refused but /bod still goes thr
 test("when the session's time is up, the band says to wrap up and repeats the goal", async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.focus = { phase: 'wrap-up', ends: START + 300_000, goal: 'fix the sorting bug' }
+  world.focus = { phase: 'wrap-up', ends: START + 300_000, goal: 'fix the sorting bug', line: "⏰ Time's up. You set out to: fix the sorting bug" }
   await $.session.start(SESSION)
   await clock.advance(1000)
 
@@ -869,12 +869,12 @@ test("when the session's time is up, the band says to wrap up and repeats the go
 test('the break counts down in the status line', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
-  world.focus = { phase: 'break', ends: START + 600_000, goal: 'fix the sorting bug' }
+  world.focus = { phase: 'break', ends: START + 600_000, goal: 'fix the sorting bug', line: '🎯 Focus session over: take your break.' }
   await $.session.start(SESSION)
   await clock.advance(1000)
 
   expect(world.status).toMatch(/^☕ break: 9:59 left/)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
 
-  expect(await ui.find({ text: /Break time/ })).toBeDefined()
+  expect(await ui.find({ text: /take your break/ })).toBeDefined()
 })
