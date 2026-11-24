@@ -38,10 +38,11 @@ Entry points:
   bod.py show move | plank | kind | check | music
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
-  bod.py level gentle | easy | medium | hard
+  bod.py level gentle | taichi | easy | medium | hard
                   How much exercise each nudge asks for: one gentle
-                  movement (no exercise at all), one exercise, two, or
-                  three with more reps. Easy by default.
+                  movement (no exercise at all), one tai chi or qi gong
+                  movement, one exercise, two, or three with more reps.
+                  Easy by default.
   bod.py every 5 | 10 | 15
                   How many minutes of work between exercise nudges. Both can
                   go in one call: bod.py level hard every 10, or
@@ -139,7 +140,7 @@ SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/
 HISTORY_PATH = os.environ.get("BOD_HISTORY") or os.path.expanduser("~/.claude/bod-focus-history.jsonl")
 
 # level: (exercises per nudge, how much the reps and seconds grow)
-LEVELS = {"gentle": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
+LEVELS = {"gentle": (1, 1), "taichi": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
 KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
@@ -185,6 +186,21 @@ GENTLE = [
     ("{} shoulder blade squeezes", 5, False),
     ("a {} second forward fold, arms hanging", 15, True),
 ]
+# The taichi level's: slow tai chi and qi gong movements, the same shape again.
+TAI_CHI = [
+    ("{} slow cloud hands, side to side", 6, False),
+    ("a {} second standing post, arms round as if hugging a tree", 30, True),
+    ("{} slow lifts of the sky, breathing in as your hands rise", 6, False),
+    ("{} draws of the bow each side", 4, False),
+    ("{} loose waist turns, arms swinging", 10, False),
+    ("{} slow partings of the wild horse's mane each side", 4, False),
+    ("{} separations of heaven and earth, one hand up and one down", 4, False),
+    ("a {} second golden rooster, standing on one leg each side", 15, True),
+    ("{} slow pushes, palms out as if moving a mountain", 6, False),
+    ("{} heel drops to shake the whole body loose", 7, False),
+]
+# What each level picks its movements from; a level not here does exercises.
+POOLS = {"gentle": GENTLE, "taichi": TAI_CHI}
 COMPASSION = [
     "give yourself a hug",
     "take three slow breaths",
@@ -571,8 +587,8 @@ def save_settings(settings):
 
 
 def pool(level):
-    """What a level picks from: soft movements on gentle, exercises otherwise."""
-    return GENTLE if level == "gentle" else EXERCISES
+    """What a level picks from: its own movements (gentle, taichi), exercises otherwise."""
+    return POOLS.get(level, EXERCISES)
 
 
 def pick(count, level="easy"):
@@ -1005,6 +1021,8 @@ def per_nudge(level):
     """What each nudge asks for on `level`, in a few words."""
     if level == "gentle":
         return "one gentle movement"
+    if level == "taichi":
+        return "one tai chi or qi gong movement"
     count, _ = LEVELS[level]
     return "one exercise" if count == 1 else f"{count} exercises" + (" with more reps" if level == "hard" else "")
 
@@ -1023,7 +1041,7 @@ def info(settings):
     what = per_nudge(settings["level"])
     return "\n".join([
         "Claude Bod settings (/bod config to change them in one form):",
-        f"- Level: {settings['level']} ({what} per nudge) · /bod level gentle|easy|medium|hard",
+        f"- Level: {settings['level']} ({what} per nudge) · /bod level {'|'.join(LEVELS)}",
         (f"- Exercise every {settings['every']} minutes of work · /bod move every {'|'.join(map(str, EVERY_CHOICES))} · /bod move off"
          if is_on(settings, "move") else "- Exercises: off · /bod move on"),
         (f"- Something kind every {settings['kind']} minutes · /bod kind every {'|'.join(map(str, KIND_CHOICES))} · /bod kind off"
@@ -1076,7 +1094,7 @@ def choose(args):
         elif key == "level":
             choices = tuple(LEVELS)
         else:
-            print("Use: level gentle|easy|medium|hard, move every 5|10|15, kind every 5|10|15|30|45, claudes 1-10, "
+            print(f"Use: level {'|'.join(LEVELS)}, move every 5|10|15, kind every 5|10|15|30|45, claudes 1-10, "
                   "snooze 2|5|10|15, move on|off, kind on|off, check on|off, music on|off.")
             sys.exit(1)
         if value not in choices:

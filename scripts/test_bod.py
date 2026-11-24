@@ -440,6 +440,15 @@ class Levels(unittest.TestCase):
         self.assertEqual(state["pending"]["count"], 1)
         self.assertEqual(bod.per_nudge("gentle"), "one gentle movement")
 
+    def test_taichi_asks_for_one_tai_chi_movement_and_its_swap_stays_tai_chi(self):
+        state = working(move=11)
+        bod.advance(state, NOW, NOT_OVER, {"level": "taichi", "every": 5, "kind": 15})
+        self.assertEqual(state["pending"]["text"], "6 slow cloud hands, side to side")
+        self.assertEqual(bod.per_nudge("taichi"), "one tai chi or qi gong movement")
+        text, _, _ = bod.swapped(state["pending"]["text"], "taichi")
+        self.assertNotIn("cloud hands", text)
+        self.assertTrue(any(what.split("{}")[-1].strip() in text for what, _, _ in bod.TAI_CHI))
+
     def test_gentle_never_picks_an_exercise_and_its_swap_stays_gentle(self):
         exercises = {what for what, _, _ in bod.EXERCISES}
         for _ in range(50):
@@ -577,11 +586,11 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(json.loads(run("choices").stdout), {
             "settings": {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 30, "check": "on",
                          "music": "on", "claudes": 3, "snooze": 10},
-            "choices": {"level": ["gentle", "easy", "medium", "hard"], "move": ["on", "off"], "every": [5, 10, 15],
+            "choices": {"level": ["gentle", "taichi", "easy", "medium", "hard"], "move": ["on", "off"], "every": [5, 10, 15],
                         "kindness": ["on", "off"], "kind": [5, 10, 15, 30, 45], "check": ["on", "off"],
                         "music": ["on", "off"], "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
-        self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|easy|medium|hard", lines)
+        self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|taichi|easy|medium|hard", lines)
         self.assertIn("- Exercise every 10 minutes of work · /bod move every 5|10|15 · /bod move off", lines)
         self.assertIn("- Something kind every 30 minutes · /bod kind every 5|10|15|30|45 · /bod kind off", lines)
         self.assertIn("- Claude cap: 3 open at once · /bod claudes 1-10", lines)
