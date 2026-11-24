@@ -825,6 +825,24 @@ class SwitchedOff(unittest.TestCase):
             self.assertEqual(run("kind", "30"), "Something kind is now every 30 minutes.")
             self.assertEqual(run("move", "maybe"), "Pick one of: on, off. It's on now.")
 
+    def test_setting_the_minutes_switches_it_back_on(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json"), "BOD_GH": "/nonexistent/gh"}
+            run = lambda *args: subprocess.run(  # noqa: E731
+                [sys.executable, os.path.join(HERE, "bod.py"), *args], env=env, capture_output=True, text=True
+            ).stdout.strip()
+            run("move", "off")
+            run("kind", "off")
+            self.assertEqual(run("move", "10"), "Your exercises are now every 10 minutes. They're back on.")
+            self.assertEqual(bod.load_settings()["move"], "on")
+            self.assertEqual(run("kind", "every", "30"), "Something kind is now every 30 minutes. Kindness nudges are back on.")
+            self.assertEqual(bod.load_settings()["kindness"], "on")
+            # Already on: nothing extra said.
+            self.assertEqual(run("every", "5"), "Your exercises are now every 5 minutes.")
+            # Off on purpose in the same call stays off.
+            run("move", "off", "every", "15")
+            self.assertEqual(bod.load_settings()["move"], "off")
+
     def test_minutes_said_the_natural_way(self):
         run = lambda *args: subprocess.run(  # noqa: E731
             [sys.executable, os.path.join(HERE, "bod.py"), *args], capture_output=True, text=True
