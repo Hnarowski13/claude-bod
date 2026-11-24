@@ -42,7 +42,7 @@ claude plugin install bod@bod
 
 ## Level and timing
 
-- `/bod level gentle|taichi|easy|medium|hard`: one gentle movement per nudge (stretches and rolls, no exercise at all), one tai chi or qi gong movement (cloud hands, standing post, the eight brocades), one exercise, two, or three with more reps and longer holds. Easy by default.
+- `/bod level gentle|chair|taichi|easy|medium|hard`: one gentle movement per nudge (stretches and rolls, no exercise at all), one movement you can do without getting up (chair yoga), one tai chi or qi gong movement (cloud hands, standing post, the eight brocades), one exercise, two, or three with more reps and longer holds. Easy by default.
 - `/bod move every 5|10|15`: minutes of work between exercise nudges. 5 by default.
 - `/bod kind every 5|10|15|30|45`: minutes of work between kindness nudges. 15 by default.
 - `/bod claudes 1-10`: how many Claudes may be open at once. 5 by default.

@@ -38,10 +38,10 @@ Entry points:
   bod.py show move | plank | kind | check | music
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
-  bod.py level gentle | taichi | easy | medium | hard
+  bod.py level gentle | chair | taichi | easy | medium | hard
                   How much exercise each nudge asks for: one gentle
-                  movement (no exercise at all), one tai chi or qi gong
-                  movement, one exercise, two, or three with more reps.
+                  movement (no exercise at all), one movement done
+                  sitting down, one tai chi or qi gong movement, one exercise, two, or three with more reps.
                   Easy by default.
   bod.py every 5 | 10 | 15
                   How many minutes of work between exercise nudges. Both can
@@ -140,7 +140,7 @@ SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/
 HISTORY_PATH = os.environ.get("BOD_HISTORY") or os.path.expanduser("~/.claude/bod-focus-history.jsonl")
 
 # level: (exercises per nudge, how much the reps and seconds grow)
-LEVELS = {"gentle": (1, 1), "taichi": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
+LEVELS = {"gentle": (1, 1), "chair": (1, 1), "taichi": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
 EVERY_CHOICES = (5, 10, 15)
 KIND_CHOICES = (5, 10, 15, 30, 45)
 # How many Claudes may be open at once (scripts/claude-limit.py enforces it).
@@ -186,6 +186,21 @@ GENTLE = [
     ("{} shoulder blade squeezes", 5, False),
     ("a {} second forward fold, arms hanging", 15, True),
 ]
+# The chair level's: chair yoga, all of it done without getting up.
+CHAIR = [
+    ("{} seated cat-cows, hands on your knees", 5, False),
+    ("a {} second seated twist each side", 15, True),
+    ("{} seated marches", 20, False),
+    ("{} seated leg lifts each leg", 8, False),
+    ("a {} second seated forward fold", 15, True),
+    ("a {} second seated figure four stretch each side", 20, True),
+    ("{} seated heel raises", 15, False),
+    ("a {} second seated reach up, fingers laced", 15, True),
+    ("{} seated side bends each side", 5, False),
+    ("{} slow ear-to-shoulder neck tilts each side", 3, False),
+    ("a {} second wrist and finger stretch each hand", 15, True),
+    ("a {} second seated eagle arms each side", 15, True),
+]
 # The taichi level's: slow tai chi and qi gong movements, the same shape again.
 TAI_CHI = [
     ("{} slow cloud hands, side to side", 6, False),
@@ -200,7 +215,7 @@ TAI_CHI = [
     ("{} heel drops to shake the whole body loose", 7, False),
 ]
 # What each level picks its movements from; a level not here does exercises.
-POOLS = {"gentle": GENTLE, "taichi": TAI_CHI}
+POOLS = {"gentle": GENTLE, "chair": CHAIR, "taichi": TAI_CHI}
 COMPASSION = [
     "give yourself a hug",
     "take three slow breaths",
@@ -587,7 +602,7 @@ def save_settings(settings):
 
 
 def pool(level):
-    """What a level picks from: its own movements (gentle, taichi), exercises otherwise."""
+    """What a level picks from: its own movements (gentle, chair, taichi), exercises otherwise."""
     return POOLS.get(level, EXERCISES)
 
 
@@ -1021,6 +1036,8 @@ def per_nudge(level):
     """What each nudge asks for on `level`, in a few words."""
     if level == "gentle":
         return "one gentle movement"
+    if level == "chair":
+        return "one movement from your chair"
     if level == "taichi":
         return "one tai chi or qi gong movement"
     count, _ = LEVELS[level]
