@@ -11,7 +11,8 @@ exercise or sat on show. Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
 (too many Claudes, lost track of what each one is doing), and every
 MUSIC_MINUTES a music break suggests putting on something she loves. Each of
-the four can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
+the four can be switched off on its own; while exercises or kindness are off,
+a line every OFF_REMINDER_MINUTES says so, so they aren't forgotten. Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up. The cap is hard:
 past it, every session refuses prompts until midnight (the mod reads
 "locked" from the view).
@@ -35,7 +36,7 @@ Entry points:
                   other timers left as they are.
   bod.py kindnow  `/bod kind now`: a kindness nudge on show right away,
                   the same way.
-  bod.py show move | plank | kind | check | music
+  bod.py show move | plank | kind | check | music | off
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
   bod.py level gentle | chair | taichi | easy | medium | hard
@@ -102,6 +103,8 @@ CHECK_IN_MINUTES = 45
 # How often the music break comes up, and what it says.
 MUSIC_MINUTES = 60
 MUSIC_TEXT = "put on something you love"
+# While exercises or kindness nudges are switched off, how often a line says so.
+OFF_REMINDER_MINUTES = 60
 BREAK_MINUTES = 20
 # Hours of Claude time a day. Past them, prompts are refused until midnight.
 DAILY_CAP_HOURS = 8
@@ -244,15 +247,15 @@ FOG_FIXES = [
 CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
 
 
-TIMES = ("last_prompt", "last_move", "last_cap", "last_kind", "last_check", "last_music")
+TIMES = ("last_prompt", "last_move", "last_cap", "last_kind", "last_check", "last_music", "last_off")
 COUNTS = ("moves", "kinds", "checks")
 # Only set while the mod runs: its last tick, and the pause after a done.
 OPTIONAL_TIMES = ("mod_seen", "quiet_until")
-# The nudge on show is {"kind": move | kind | check | music, "text", "seconds",
+# The nudge on show is {"kind": move | kind | check | music | off, "text", "seconds",
 # "beeped", and these times}. "started" is when she pressed go; "due" is when
 # a kindness nudge was due, which its done sets last_kind from.
 PENDING_TIMES = ("started", "snoozed_until", "due")
-LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check", "music": "last_music"}
+LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check", "music": "last_music", "off": "last_off"}
 
 
 def load_state():
@@ -265,6 +268,8 @@ def load_state():
         raw.setdefault("last_check", raw.get("last_prompt"))
         # From before the music break: the same.
         raw.setdefault("last_music", raw.get("last_prompt"))
+        # From before the switched-off reminder: the same.
+        raw.setdefault("last_off", raw.get("last_prompt"))
         state = {key: datetime.fromisoformat(raw[key]) for key in TIMES}
         for key in COUNTS:
             state[key] = int(raw.get(key, 0))
@@ -655,6 +660,19 @@ def music_nudge():
     return f"Music break: {MUSIC_TEXT}."
 
 
+def switched_off(settings):
+    """What the switched-off reminder says, or None while exercises and kindness are both on."""
+    off = [(name, command) for kind, name, command in
+           (("move", "Exercises", "/bod move on"), ("kind", "kindness nudges", "/bod kind on"))
+           if not is_on(settings, kind)]
+    if not off:
+        return None
+    if len(off) == 2:
+        return "Exercises and kindness nudges are still off: /bod move on and /bod kind on bring them back"
+    name, command = off[0]
+    return f"{name[0].upper() + name[1:]} are still off: {command} brings them back"
+
+
 def skips_today(state, now):
     skips = state["skips"]
     return skips["count"] if skips and skips["date"] == now.date().isoformat() else 0
@@ -685,7 +703,8 @@ def kindness(state, due):
 
 
 def is_on(settings, kind):
-    return settings[SWITCH[kind]] == "on"
+    """Whether a nudge is switched on; one with no switch (the switched-off reminder) always is."""
+    return kind not in SWITCH or settings[SWITCH[kind]] == "on"
 
 
 def mod_alive(state, now):
@@ -726,6 +745,9 @@ def prompted(state, now):
     if is_on(settings, "music") and due(state, "last_music", MUSIC_MINUTES, now):
         nudges.append(music_nudge())
         state["last_music"] = now
+    if switched_off(settings) and due(state, "last_off", OFF_REMINDER_MINUTES, now):
+        nudges.append(f"{switched_off(settings)}.")
+        state["last_off"] = now
     return state, nudges
 
 
@@ -779,6 +801,8 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
         pending = {"kind": "check", "text": fog_fix(state["checks"]), "seconds": None}
     elif is_on(settings, "music") and due(state, "last_music", MUSIC_MINUTES, now):
         pending = {"kind": "music", "text": MUSIC_TEXT, "seconds": None}
+    elif switched_off(settings) and due(state, "last_off", OFF_REMINDER_MINUTES, now):
+        pending = {"kind": "off", "text": switched_off(settings), "seconds": None}
     elif is_on(settings, "move") and due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
@@ -802,7 +826,7 @@ def right_now(state, now, settings=None, kind="move"):
     if snoozed and pending["kind"] != kind:
         settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
         every = {"move": settings["every"], "kind": settings["kind"], "check": CHECK_IN_MINUTES,
-                 "music": MUSIC_MINUTES}[pending["kind"]]
+                 "music": MUSIC_MINUTES, "off": OFF_REMINDER_MINUTES}[pending["kind"]]
         state[LAST[pending["kind"]]] = pending["snoozed_until"] - timedelta(minutes=every)
         pending = None
     if pending:
@@ -1021,9 +1045,11 @@ def show(kind):
         state = fresh_state(now, load_state())
         plank = kind == "plank"
         kind = "move" if plank else kind
-        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES, MUSIC_MINUTES))
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES, MUSIC_MINUTES, OFF_REMINDER_MINUTES))
         # Shown even when it's switched off: this is for trying the band out.
-        advance(state, now, lambda now: timedelta(0), {**load_settings(), SWITCH[kind]: "on"})
+        # The switched-off reminder shows as if exercises were off.
+        trying = {"move": "off"} if kind == "off" else {SWITCH[kind]: "on"}
+        advance(state, now, lambda now: timedelta(0), {**load_settings(), **trying})
         if plank:
             # A lone plank, to see the countdown.
             text, seconds, count = exercise("easy", [next(e for e in EXERCISES if "plank" in e[0])])
@@ -1147,11 +1173,16 @@ def natural(args):
 
 
 def drop_switched_off(settings):
-    """A nudge on show whose kind was just switched off goes, unless she's already doing it."""
+    """A nudge on show whose kind was just switched off goes, unless she's already doing it,
+    and so does the switched-off reminder once nothing it names is off."""
     with locked():
         state = load_state()
         pending = state and state["pending"]
-        if pending and not pending["started"] and not is_on(settings, pending["kind"]):
+        if pending and pending["kind"] == "off":
+            stale = switched_off(settings) is None
+        else:
+            stale = pending and not pending["started"] and not is_on(settings, pending["kind"])
+        if stale:
             state["pending"] = None
             save_state(state)
 

@@ -713,6 +713,57 @@ class MusicBreak(unittest.TestCase):
             self.assertIn("- Music break every 60 minutes · /bod music off", run("info").splitlines())
 
 
+class OffReminder(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(bod.SETTINGS_PATH):
+            os.remove(bod.SETTINGS_PATH)
+
+    def tearDown(self):
+        self.setUp()
+
+    def test_nothing_while_exercises_and_kindness_are_on(self):
+        state = working(off=120)
+        bod.advance(state, NOW, NOT_OVER, {"check": "off", "music": "off"})
+        self.assertIsNone(state["pending"])
+
+    def test_a_line_every_60_minutes_while_one_is_off(self):
+        settings = {"move": "off", "check": "off", "music": "off"}
+        state = working(off=59, kind=1)
+        bod.advance(state, NOW, NOT_OVER, settings)
+        self.assertIsNone(state["pending"])
+        state = working(off=60, kind=1)
+        bod.advance(state, NOW, NOT_OVER, settings)
+        self.assertEqual(state["pending"]["kind"], "off")
+        self.assertEqual(state["pending"]["text"], "Exercises are still off: /bod move on brings them back")
+        bod.press(state, "done", NOW)
+        self.assertEqual(state["last_off"], NOW)
+
+    def test_it_names_whichever_are_off(self):
+        self.assertEqual(bod.switched_off({**bod.DEFAULT_SETTINGS, "kindness": "off"}),
+                         "Kindness nudges are still off: /bod kind on brings them back")
+        self.assertEqual(bod.switched_off({**bod.DEFAULT_SETTINGS, "move": "off", "kindness": "off"}),
+                         "Exercises and kindness nudges are still off: /bod move on and /bod kind on bring them back")
+        self.assertIsNone(bod.switched_off(bod.DEFAULT_SETTINGS))
+
+    def test_without_the_mod_claude_passes_it_on(self):
+        bod.save_settings({**bod.DEFAULT_SETTINGS, "move": "off"})
+        state, nudges = bod.prompted(working(off=61, prompt=1), NOW)
+        self.assertIn("Exercises are still off: /bod move on brings them back.", nudges)
+        self.assertEqual(state["last_off"], NOW)
+
+    def test_switching_back_on_takes_the_reminder_down(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json"), "BOD_GH": "/nonexistent/gh"}
+            run = lambda *args: subprocess.run(  # noqa: E731
+                [sys.executable, os.path.join(HERE, "bod.py"), *args], env=env, capture_output=True, text=True
+            ).stdout.strip()
+            self.assertEqual(json.loads(run("show", "off"))["nudge"]["kind"], "off")
+            run("move", "off")
+            self.assertEqual(json.loads(run("tick"))["nudge"]["kind"], "off")
+            run("move", "on")
+            self.assertIsNone(json.loads(run("tick"))["nudge"])
+
+
 class SwitchedOff(unittest.TestCase):
     def setUp(self):
         if os.path.exists(bod.SETTINGS_PATH):

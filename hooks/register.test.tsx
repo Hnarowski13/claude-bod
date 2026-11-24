@@ -463,6 +463,18 @@ test('a music break is one line with done and not now, and never holds a prompt 
   expect(world.commands).toContain('done')
 })
 
+test('the switched-off reminder is one line with done and not now, and never holds a prompt back', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'off', text: 'Exercises are still off: /bod move on brings them back', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /🔕 Exercises are still off: \/bod move on brings them back\./ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+  expect(await ui.find({ key: 'done' })).toBeDefined()
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+})
+
 test('a workflow check-in takes over the band with the question, one fix, done and not now', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'check', text: 'close every tab whose PR has merged', seconds: null })
