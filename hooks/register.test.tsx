@@ -141,8 +141,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
 
     if (command === 'choices') {
       return ok(JSON.stringify({
-        settings: { level: 'easy', move: 'on', every: 5, kindness: 'on', kind: 15, check: 'on', claudes: 5, snooze: 5 },
-        choices: { level: ['gentle', 'easy', 'medium', 'hard'], move: ['on', 'off'], every: [5, 10, 15], kindness: ['on', 'off'], kind: [5, 10, 15, 30, 45], check: ['on', 'off'], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
+        settings: { level: 'easy', move: 'on', every: 5, kindness: 'on', kind: 15, check: 'on', music: 'on', claudes: 5, snooze: 5 },
+        choices: { level: ['gentle', 'easy', 'medium', 'hard'], move: ['on', 'off'], every: [5, 10, 15], kindness: ['on', 'off'], kind: [5, 10, 15, 30, 45], check: ['on', 'off'], music: ['on', 'off'], claudes: Array.from({ length: 10 }, (_, i) => i + 1), snooze: [2, 5, 10, 15] },
       }))
     }
 
@@ -150,7 +150,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       return ok('Claude Bod settings:\n- Claude cap: 5\n')
     }
 
-    if (command === 'level' || command === 'every' || command === 'kind' || command === 'move' || command === 'check' || command === 'claudes' || (command === 'snooze' && e.argv.length > 3)) {
+    if (command === 'level' || command === 'every' || command === 'kind' || command === 'move' || command === 'check' || command === 'music' || command === 'claudes' || (command === 'snooze' && e.argv.length > 3)) {
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
@@ -423,6 +423,23 @@ test('a kindness nudge has done and no timer', async ($, on) => {
   expect(world.toasts).toEqual(['Nice 💛'])
 })
 
+test('a music break is one line with done and not now, and never holds a prompt back', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, { kind: 'music', text: 'put on something you love', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  expect(await ui.find({ text: /🎵 Music break: put on something you love\./ })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeUndefined()
+  expect(await ui.find({ key: 'swap' })).toBeUndefined()
+  expect(await ui.find({ key: 'snooze' })).toBeDefined()
+  expect(await $.prompt.submit(PROMPT)).toEqual({ text: 'fix the bug' })
+
+  await ui.press({ key: 'done' })
+
+  expect(world.commands).toContain('done')
+})
+
 test('a workflow check-in takes over the band with the question, one fix, done and not now', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'check', text: 'close every tab whose PR has merged', seconds: null })
@@ -669,6 +686,8 @@ test('/bod level, /bod every, /bod claudes and the on/off switches set Claude Bo
   expect(world.commands).toContain('move off')
   expect(await $.command.run(BOD('check off'))).toMatchObject({ text: 'Claude Bod is on off.' })
   expect(world.commands).toContain('check off')
+  expect(await $.command.run(BOD('music off'))).toMatchObject({ text: 'Claude Bod is on off.' })
+  expect(world.commands).toContain('music off')
   expect(await $.command.run(BOD('info'))).toMatchObject({ text: 'Claude Bod settings:\n- Claude cap: 5' })
   expect(world.isPanelOpen).toBe(false)
 
