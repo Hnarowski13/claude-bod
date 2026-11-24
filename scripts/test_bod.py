@@ -486,14 +486,14 @@ class Levels(unittest.TestCase):
 
     def test_done_counts_every_exercise_in_the_set(self):
         state = working(move=6)
-        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        bod.advance(state, NOW, NOT_OVER, {"level": "hard", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
         bod.press(state, "done", NOW)
         self.assertEqual(state["moves"], 3)
 
     def test_a_bad_settings_file_falls_back_to_the_defaults(self):
         with open(bod.SETTINGS_PATH, "w") as fh:
             fh.write('{"level": "extreme", "every": 7, "kind": 15}')
-        self.assertEqual(bod.load_settings(), {"level": "easy", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "easy", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
 
 
 class CommandLine(unittest.TestCase):
@@ -543,18 +543,18 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("level", "gentle").stdout.strip(), "Your level is now gentle: one gentle movement per nudge.")
         self.assertEqual(run("level", "hard").stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge.")
         self.assertEqual(run("every", "15").stdout.strip(), "Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
         self.assertEqual(run("settings").stdout.strip(), "Claude Bod is on hard: 3 exercises with more reps every 15 minutes, something kind every 15, at most 5 Claudes open at once.")
         both = run("level", "medium", "every", "10")
         self.assertEqual(both.stdout.strip(), "Your level is now medium: 2 exercises per nudge. Your exercises are now every 10 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
         short = run("level", "hard", "15")
         self.assertEqual(short.stdout.strip(), "Your level is now hard: 3 exercises with more reps per nudge. Your exercises are now every 15 minutes.")
-        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "hard", "move": "on", "every": 15, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
         run("level", "medium", "every", "10")
         half_bad = run("level", "easy", "every", "7")
         self.assertEqual(half_bad.returncode, 1)
-        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "claudes": 5, "snooze": 5})
+        self.assertEqual(bod.load_settings(), {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 15, "check": "on", "music": "on", "claudes": 5, "snooze": 5})
         bad = run("every", "7")
         self.assertEqual(bad.returncode, 1)
         self.assertEqual(bad.stdout.strip(), "Pick one of: 5, 10, 15. It's 10 now.")
@@ -576,10 +576,10 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("snooze", "7").stdout.strip(), "Pick one of: 2, 5, 10, 15. It's 10 now.")
         self.assertEqual(json.loads(run("choices").stdout), {
             "settings": {"level": "medium", "move": "on", "every": 10, "kindness": "on", "kind": 30, "check": "on",
-                         "claudes": 3, "snooze": 10},
+                         "music": "on", "claudes": 3, "snooze": 10},
             "choices": {"level": ["gentle", "easy", "medium", "hard"], "move": ["on", "off"], "every": [5, 10, 15],
                         "kindness": ["on", "off"], "kind": [5, 10, 15, 30, 45], "check": ["on", "off"],
-                        "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
+                        "music": ["on", "off"], "claudes": list(range(1, 11)), "snooze": [2, 5, 10, 15]},
         })
         self.assertIn("- Level: medium (2 exercises per nudge) · /bod level gentle|easy|medium|hard", lines)
         self.assertIn("- Exercise every 10 minutes of work · /bod move every 5|10|15 · /bod move off", lines)
@@ -632,6 +632,67 @@ class CheckIn(unittest.TestCase):
         state, nudges = bod.prompted(state, NOW)
         self.assertIn(f"Workflow check-in: {bod.CHECK_IN_QUESTION} Try this: {bod.FOG_FIXES[0]}.", nudges)
         self.assertEqual(state["checks"], 1)
+
+
+class MusicBreak(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(bod.SETTINGS_PATH):
+            os.remove(bod.SETTINGS_PATH)
+
+    def tearDown(self):
+        self.setUp()
+
+    def test_a_music_break_goes_up_every_60_minutes(self):
+        state = working(music=59)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertIsNone(state["pending"])
+        state = working(music=60)
+        bod.advance(state, NOW, NOT_OVER)
+        self.assertEqual(state["pending"]["kind"], "music")
+        self.assertEqual(state["pending"]["text"], bod.MUSIC_TEXT)
+
+    def test_done_restarts_it(self):
+        state = working(music=61)
+        bod.advance(state, NOW, NOT_OVER)
+        bod.press(state, "done", NOW)
+        self.assertEqual(state["last_music"], NOW)
+        self.assertIsNone(state["pending"])
+
+    def test_switched_off_it_never_goes_up(self):
+        state = working(music=120)
+        bod.advance(state, NOW, NOT_OVER, {"music": "off"})
+        self.assertIsNone(state["pending"])
+
+    def test_without_the_mod_claude_passes_it_on(self):
+        state, nudges = bod.prompted(working(music=61, prompt=1), NOW)
+        self.assertIn("Music break: put on something you love.", nudges)
+        self.assertEqual(state["last_music"], NOW)
+
+    def test_a_state_file_from_before_it_starts_its_timer_from_the_last_prompt(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(bod, "STATE_PATH", os.path.join(folder, "s.json")):
+            state = working()
+            bod.save_state(state)
+            with open(bod.STATE_PATH) as fh:
+                raw = json.load(fh)
+            del raw["last_music"]
+            with open(bod.STATE_PATH, "w") as fh:
+                json.dump(raw, fh)
+            self.assertEqual(bod.load_state()["last_music"], state["last_prompt"])
+
+    def test_on_off_said_and_kept(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**os.environ, "BOD_STATE": os.path.join(folder, "state.json"), "BOD_GH": "/nonexistent/gh"}
+            run = lambda *args: subprocess.run(  # noqa: E731
+                [sys.executable, os.path.join(HERE, "bod.py"), *args], env=env, capture_output=True, text=True
+            ).stdout.strip()
+            self.assertEqual(json.loads(run("show", "music"))["nudge"]["kind"], "music")
+            self.assertEqual(run("music", "off"), "The music break is off.")
+            self.assertIsNone(json.loads(run("tick"))["nudge"])
+            self.assertEqual(run("settings"), "Claude Bod is on easy: one exercise every 5 minutes, "
+                                              "something kind every 15, music break off, at most 5 Claudes open at once.")
+            self.assertIn("- Music break: off · /bod music on", run("info").splitlines())
+            self.assertEqual(run("music", "on"), "The music break is on, every 60 minutes.")
+            self.assertIn("- Music break every 60 minutes · /bod music off", run("info").splitlines())
 
 
 class SwitchedOff(unittest.TestCase):

@@ -9,8 +9,9 @@ restarts when she presses done; kindness keeps a fixed schedule, each one due
 its interval after the last was due, however long that one waited behind an
 exercise or sat on show. Every CHECK_IN_MINUTES a
 workflow check-in asks how it's going and offers one way out of Claude-FOG
-(too many Claudes, lost track of what each one is doing). Each of the three
-can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
+(too many Claudes, lost track of what each one is doing), and every
+MUSIC_MINUTES a music break suggests putting on something she loves. Each of
+the four can be switched off on its own. Every CAP_CHECK_MINUTES it checks today's hours, and once
 they pass DAILY_CAP_HOURS a "stop for the day" line stays up. The cap is hard:
 past it, every session refuses prompts until midnight (the mod reads
 "locked" from the view).
@@ -34,7 +35,7 @@ Entry points:
                   other timers left as they are.
   bod.py kindnow  `/bod kind now`: a kindness nudge on show right away,
                   the same way.
-  bod.py show move | plank | kind | check
+  bod.py show move | plank | kind | check | music
                   Puts that nudge on show right now, to try the band out
                   without waiting for a timer.
   bod.py level gentle | easy | medium | hard
@@ -47,9 +48,9 @@ Entry points:
                   just bod.py level hard 10.
   bod.py move every 5 | 10 | 15, kind every 5 | 10 | 15 | 30 | 45
                   The same minutes said the natural way (`move 10` too).
-  bod.py move on | off, kind on | off, check on | off
-                  Exercises, kindness nudges or the workflow check-in on
-                  or off, each on its own (on by default).
+  bod.py move on | off, kind on | off, check on | off, music on | off
+                  Exercises, kindness nudges, the workflow check-in or the
+                  music break on or off, each on its own (on by default).
   bod.py snooze 2 | 5 | 10 | 15
                   How many minutes "not now" puts a nudge off for (bare
                   `snooze` is the button itself).
@@ -97,6 +98,9 @@ from merged import merged_today  # noqa: E402
 CAP_CHECK_MINUTES = 30
 # How often the workflow check-in comes up.
 CHECK_IN_MINUTES = 45
+# How often the music break comes up, and what it says.
+MUSIC_MINUTES = 60
+MUSIC_TEXT = "put on something you love"
 BREAK_MINUTES = 20
 # Hours of Claude time a day. Past them, prompts are refused until midnight.
 DAILY_CAP_HOURS = 3
@@ -142,12 +146,13 @@ CLAUDES_CHOICES = range(1, 11)
 SNOOZE_CHOICES = (2, 5, 10, 15)
 SWITCH_CHOICES = ("on", "off")
 # The setting that switches each nudge on or off ("kind on|off" sets kindness).
-SWITCH = {"move": "move", "kind": "kindness", "check": "check"}
+SWITCH = {"move": "move", "kind": "kindness", "check": "check", "music": "music"}
 DEFAULT_SETTINGS = {"level": "easy", "move": "on", "every": 5, "kindness": "on", "kind": 15, "check": "on",
-                    "claudes": 5, "snooze": 5}
+                    "music": "on", "claudes": 5, "snooze": 5}
 # What each setting may be, in the order /bod config shows them.
 CHOICES = {"level": tuple(LEVELS), "move": SWITCH_CHOICES, "every": EVERY_CHOICES, "kindness": SWITCH_CHOICES,
-           "kind": KIND_CHOICES, "check": SWITCH_CHOICES, "claudes": CLAUDES_CHOICES, "snooze": SNOOZE_CHOICES}
+           "kind": KIND_CHOICES, "check": SWITCH_CHOICES, "music": SWITCH_CHOICES, "claudes": CLAUDES_CHOICES,
+           "snooze": SNOOZE_CHOICES}
 
 # (what to do, with {} for how many, how many on easy, whether it's seconds
 # to count down from rather than reps)
@@ -206,15 +211,15 @@ FOG_FIXES = [
 CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
 
 
-TIMES = ("last_prompt", "last_move", "last_cap", "last_kind", "last_check")
+TIMES = ("last_prompt", "last_move", "last_cap", "last_kind", "last_check", "last_music")
 COUNTS = ("moves", "kinds", "checks")
 # Only set while the mod runs: its last tick, and the pause after a done.
 OPTIONAL_TIMES = ("mod_seen", "quiet_until")
-# The nudge on show is {"kind": move | kind | check, "text", "seconds",
+# The nudge on show is {"kind": move | kind | check | music, "text", "seconds",
 # "beeped", and these times}. "started" is when she pressed go; "due" is when
 # a kindness nudge was due, which its done sets last_kind from.
 PENDING_TIMES = ("started", "snoozed_until", "due")
-LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check"}
+LAST = {"move": "last_move", "kind": "last_kind", "check": "last_check", "music": "last_music"}
 
 
 def load_state():
@@ -225,6 +230,8 @@ def load_state():
         raw.setdefault("last_cap", raw.get("last_stand"))
         # From before the check-in: its timer starts now-ish, with the others.
         raw.setdefault("last_check", raw.get("last_prompt"))
+        # From before the music break: the same.
+        raw.setdefault("last_music", raw.get("last_prompt"))
         state = {key: datetime.fromisoformat(raw[key]) for key in TIMES}
         for key in COUNTS:
             state[key] = int(raw.get(key, 0))
@@ -604,6 +611,10 @@ def check_nudge(checks):
     return f"Workflow check-in: {CHECK_IN_QUESTION} Try this: {fog_fix(checks)}."
 
 
+def music_nudge():
+    return f"Music break: {MUSIC_TEXT}."
+
+
 def skips_today(state, now):
     skips = state["skips"]
     return skips["count"] if skips and skips["date"] == now.date().isoformat() else 0
@@ -672,6 +683,9 @@ def prompted(state, now):
         nudges.append(check_nudge(state["checks"]))
         state["last_check"] = now
         state["checks"] += 1
+    if is_on(settings, "music") and due(state, "last_music", MUSIC_MINUTES, now):
+        nudges.append(music_nudge())
+        state["last_music"] = now
     return state, nudges
 
 
@@ -723,6 +737,8 @@ def advance(state, now, worked_today=lambda now: today(now)[0], settings=None):
     # The check-in first: it's the rare one, and the exercise is never far behind.
     if is_on(settings, "check") and due(state, "last_check", CHECK_IN_MINUTES, now):
         pending = {"kind": "check", "text": fog_fix(state["checks"]), "seconds": None}
+    elif is_on(settings, "music") and due(state, "last_music", MUSIC_MINUTES, now):
+        pending = {"kind": "music", "text": MUSIC_TEXT, "seconds": None}
     elif is_on(settings, "move") and due(state, "last_move", settings["every"], now):
         text, seconds, count = exercise(settings["level"])
         pending = {"kind": "move", "text": text, "seconds": seconds, "count": count}
@@ -745,7 +761,8 @@ def right_now(state, now, settings=None, kind="move"):
     snoozed = pending and pending["snoozed_until"] and now < pending["snoozed_until"]
     if snoozed and pending["kind"] != kind:
         settings = {**DEFAULT_SETTINGS, **(settings or load_settings())}
-        every = {"move": settings["every"], "kind": settings["kind"], "check": CHECK_IN_MINUTES}[pending["kind"]]
+        every = {"move": settings["every"], "kind": settings["kind"], "check": CHECK_IN_MINUTES,
+                 "music": MUSIC_MINUTES}[pending["kind"]]
         state[LAST[pending["kind"]]] = pending["snoozed_until"] - timedelta(minutes=every)
         pending = None
     if pending:
@@ -964,7 +981,7 @@ def show(kind):
         state = fresh_state(now, load_state())
         plank = kind == "plank"
         kind = "move" if plank else kind
-        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES))
+        state[LAST[kind]] = now - timedelta(minutes=max(*EVERY_CHOICES, *KIND_CHOICES, CHECK_IN_MINUTES, MUSIC_MINUTES))
         # Shown even when it's switched off: this is for trying the band out.
         advance(state, now, lambda now: timedelta(0), {**load_settings(), SWITCH[kind]: "on"})
         if plank:
@@ -988,7 +1005,8 @@ def describe(settings):
     move = f"{what} every {settings['every']} minutes" if is_on(settings, "move") else "exercises off"
     kind = f"something kind every {settings['kind']}" if is_on(settings, "kind") else "kindness off"
     check = "" if is_on(settings, "check") else ", workflow check-in off"
-    return f"Claude Bod is on {settings['level']}: {move}, {kind}{check}, at most {settings['claudes']} Claudes open at once."
+    music = "" if is_on(settings, "music") else ", music break off"
+    return f"Claude Bod is on {settings['level']}: {move}, {kind}{check}{music}, at most {settings['claudes']} Claudes open at once."
 
 
 def info(settings):
@@ -1004,6 +1022,8 @@ def info(settings):
         f"- Claude cap: {settings['claudes']} open at once · /bod claudes {CLAUDES_CHOICES[0]}-{CLAUDES_CHOICES[-1]}",
         (f"- Workflow check-in every {CHECK_IN_MINUTES} minutes · /bod check off"
          if is_on(settings, "check") else "- Workflow check-in: off · /bod check on"),
+        (f"- Music break every {MUSIC_MINUTES} minutes · /bod music off"
+         if is_on(settings, "music") else "- Music break: off · /bod music on"),
         f"- Snooze: {settings['snooze']} minutes · /bod snooze {'|'.join(map(str, SNOOZE_CHOICES))}",
         f"- Away for {BREAK_MINUTES} minutes counts as a break and restarts the timers",
         f"- Daily cap: {DAILY_CAP_HOURS} hours, then prompts are refused until midnight",
@@ -1030,7 +1050,7 @@ def choose(args):
     for key, value in zip(args[::2], args[1::2]):
         if key == "kind" and value in SWITCH_CHOICES:
             key = SWITCH["kind"]
-        if key in ("move", "kindness", "check"):
+        if key in ("move", "kindness", "check", "music"):
             choices = SWITCH_CHOICES
         elif key == "every":
             value = int(value) if value.isdigit() else None
@@ -1048,7 +1068,7 @@ def choose(args):
             choices = tuple(LEVELS)
         else:
             print("Use: level gentle|easy|medium|hard, move every 5|10|15, kind every 5|10|15|30|45, claudes 1-10, "
-                  "snooze 2|5|10|15, move on|off, kind on|off, check on|off.")
+                  "snooze 2|5|10|15, move on|off, kind on|off, check on|off, music on|off.")
             sys.exit(1)
         if value not in choices:
             pick = (f"Pick a number from {choices[0]} to {choices[-1]}." if isinstance(choices, range)
@@ -1109,6 +1129,9 @@ def confirm(key, settings, before):
     if key == "check":
         return (f"The workflow check-in is on, every {CHECK_IN_MINUTES} minutes." if is_on(settings, "check")
                 else "The workflow check-in is off.")
+    if key == "music":
+        return (f"The music break is on, every {MUSIC_MINUTES} minutes." if is_on(settings, "music")
+                else "The music break is off.")
     if key == "snooze":
         return f"Not now puts a nudge off for {settings['snooze']} minutes."
     if settings["claudes"] == before["claudes"]:
@@ -1130,6 +1153,7 @@ def status():
         print(f"Last movement nudge: {fmt(now - state['last_move'])} ago")
         print(f"Last compassion nudge: {fmt(now - state['last_kind'])} ago")
         print(f"Last workflow check-in: {fmt(now - state['last_check'])} ago")
+        print(f"Last music break: {fmt(now - state['last_music'])} ago")
 
     if over_cap(worked):
         print("Verdict: STOP for the day, over the cap")
@@ -1150,7 +1174,7 @@ if __name__ == "__main__":
             pass
     elif mode in ("tick", "now", "kindnow", "go", "swap", "done", "snooze", "beep") and not (mode == "snooze" and sys.argv[2:]):
         mod(mode)
-    elif mode in ("level", "every", "kind", "claudes", "snooze", "move", "check"):
+    elif mode in ("level", "every", "kind", "claudes", "snooze", "move", "check", "music"):
         choose(sys.argv[1:])
     elif mode == "focus":
         focus(sys.argv[2:])

@@ -6,8 +6,8 @@
 // An exercise nudge takes the session over: a box in the
 // band above the prompt, full width, and no prompt is sent until it's done (or
 // put off with "not now"). So does the workflow check-in every 45 minutes,
-// with one thing to try against Claude-FOG. Kindness nudges and the "stop for the day" line
-// show in the same band as a single line.
+// with one thing to try against Claude-FOG. Kindness nudges, the hourly music
+// break and the "stop for the day" line show in the same band as a single line.
 //
 // The status line under the prompt keeps a running total of today's hours
 // and of today's merged PRs against the daily cap (as a progress bar),
@@ -29,8 +29,8 @@
 //
 // `/bod config` opens the one pane it has: a small form above the prompt
 // with every setting, closed again on Save, Cancel or Esc. Exercises,
-// kindness and the check-in can each be switched off there, or with
-// `/bod move off`, `/bod kind off` and `/bod check off`.
+// kindness, the check-in and the music break can each be switched off there,
+// or with `/bod move off`, `/bod kind off`, `/bod check off` and `/bod music off`.
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
@@ -43,7 +43,7 @@ const FOCUS_SOUNDS = {
   'wrap-up': '/System/Library/Sounds/Sosumi.aiff',
   break: '/System/Library/Sounds/Blow.aiff',
 } as const
-const ICONS = { move: '🤸', kind: '💛', check: '🧭' }
+const ICONS = { move: '🤸', kind: '💛', check: '🧭', music: '🎵' }
 const TITLES = { move: 'Movement break', check: 'Workflow check-in' }
 // What the check-in asks, over the one thing to try (bod.py's CHECK_IN_QUESTION).
 const CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
@@ -80,6 +80,10 @@ export const headline = (nudge: Nudge) => {
     return `Workflow check-in: ${CHECK_IN_QUESTION} Try this: ${nudge.text}`
   }
 
+  if (nudge.kind === 'music') {
+    return `Music break: ${nudge.text}.`
+  }
+
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
 }
 
@@ -94,9 +98,10 @@ export const skippedNote = (nudge: Nudge) => {
   return `you skipped ${skipped === 1 ? 'once' : skipped === 2 ? 'twice' : `${skipped} times`} already`
 }
 
-// The nudges that take the session over until they're done.
+// The nudges that take the session over until they're done; kindness and
+// music only show a line.
 export const locks = (nudge: Nudge | null | undefined): nudge is Nudge =>
-  nudge !== null && nudge !== undefined && nudge.kind !== 'kind'
+  nudge !== null && nudge !== undefined && nudge.kind !== 'kind' && nudge.kind !== 'music'
 
 // Where a running timer stands: up for reps, down for a timed hold like the plank.
 export const reading = (nudge: Nudge, at: number) => {
@@ -333,6 +338,7 @@ const ROWS: { key: Setting; label: string; unit: string }[] = [
   { key: 'kindness', label: 'Kindness', unit: '' },
   { key: 'kind', label: 'Kindness every', unit: ' min' },
   { key: 'check', label: 'Check-in', unit: '' },
+  { key: 'music', label: 'Music break', unit: '' },
   { key: 'claudes', label: 'Claude cap', unit: '' },
   { key: 'snooze', label: 'Snooze', unit: ' min' },
 ]
@@ -584,8 +590,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Start a focus session (focus <minutes> <goal>), look back on it (recall <what you remember>, log), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
-      argumentHint: '[focus 5|10|15|30|45|60|75|90 <goal>] [recall <what we worked on>] [log] [config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
+      description: 'Start a focus session (focus <minutes> <goal>), look back on it (recall <what you remember>, log), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness, the check-in or the music break off (config: all of them in one form)',
+      argumentHint: '[focus 5|10|15|30|45|60|75|90 <goal>] [recall <what we worked on>] [log] [config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check|music on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -608,7 +614,7 @@ export const register: Register = on => {
     const kindNow = setting === 'kind' && args[1] === 'now'
     const moveNow = setting === 'now' || (setting === 'move' && args[1] === 'now')
 
-    if (!kindNow && !moveNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
+    if (!kindNow && !moveNow && (setting === 'level' || setting === 'every' || setting === 'kind' || setting === 'move' || setting === 'check' || setting === 'music' || setting === 'claudes' || setting === 'snooze' || setting === 'info')) {
       return { text: await settings($, args) }
     }
 

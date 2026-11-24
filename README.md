@@ -4,10 +4,11 @@ Looks after the person at the keyboard while Claude Code runs. Works in every pr
 
 - **Movement nudges** in a band above the prompt: a quick exercise every 5 minutes of work (or 10, or 15) and something kind to yourself every 15 (or 10, 30, 45). They have go / done / not now buttons and an exercise timer. The exercise timer restarts when you press done; kindness keeps a fixed schedule, so one that waited behind an exercise doesn't push the next one back.
 - **Workflow check-in**: every 45 minutes of work, Bod asks how the workflow is going and offers one thing to try against Claude-FOG (too many Claudes, lost track of what each is doing): close merged tabs, finish one session first, and so on. It takes the session over like an exercise does, with done / not now.
+- **Music break**: every 60 minutes of work, a line in the band says "🎵 Music break: put on something you love." with done / not now. It never blocks a prompt.
 - **Countdown**: the status line under the prompt shows how long until the next exercise and kindness nudges (`🤸 move in 3:12 · 💛 kind in 9:40`), or that Bod is paused after 20 minutes without a prompt.
 - **Phase**: the status line leads with what this session is doing, as a little progress bar (`▰▰▱▱▱▱▱ coding`), read from its own tool calls: reading → researching, editing → coding, `/built-in-review`, `/simplify`, `/code-review`, a test run (rspec, vitest, e2e, unittest, ...) → testing, `gh pr create` → handing back.
 - **Merged PRs**: the status line also shows today's merged PRs against a daily cap of 15, as a bar that fills up (`▰▰▰▰▰▰▱▱▱▱ 9/15 PRs`), so you can see how many more you can do. It asks GitHub through `gh` every 5 minutes; a claude-bod PR counts as half. Without `gh` it's simply left out.
-- **Takeover**: an exercise nudge or check-in takes the session over (a box above the prompt, one exercise per line). Prompts are refused until it's done or put off with "not now". Kindness nudges never block.
+- **Takeover**: an exercise nudge or check-in takes the session over (a box above the prompt, one exercise per line). Prompts are refused until it's done or put off with "not now". Kindness nudges and the music break never block.
 - **Stop for the day**: past 3 hours of Claude time today, a "stop for the day" line stays up in the band and every session refuses prompts until midnight. The hours are a rough count from every project's transcripts; if they can't be counted, nothing is refused.
 - **Claude cap**: at most 5 Claudes open at once (change it with `/bod claudes <n>`). A newer session refuses prompts until an older one closes.
 - **`/work-check`**: hours today, the current stretch, and a verdict (keep going, take a break, or stop).
@@ -46,7 +47,7 @@ claude plugin install bod@bod
 - `/bod kind every 5|10|15|30|45`: minutes of work between kindness nudges. 15 by default.
 - `/bod claudes 1-10`: how many Claudes may be open at once. 5 by default.
 - `/bod snooze 2|5|10|15`: how many minutes "not now" puts a nudge off for. 5 by default.
-- `/bod move off`, `/bod kind off`, `/bod check off`: switch exercises, kindness nudges or the workflow check-in off, each on its own. `on` brings it back. All on by default.
+- `/bod move off`, `/bod kind off`, `/bod check off`, `/bod music off`: switch exercises, kindness nudges, the workflow check-in or the music break off, each on its own. `on` brings it back. All on by default.
 - `/bod config`: every setting above in one form, each set to what it is now; change what you like and Save.
 - `/bod now`: an exercise right away, without waiting for the timer. The kindness timer carries on as they were.
 - `/bod kind now`: a kindness nudge right away, the same way.

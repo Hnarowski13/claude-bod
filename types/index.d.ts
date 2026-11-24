@@ -1,6 +1,6 @@
 /** The nudge on show, as `bod.py` prints it; times are epoch milliseconds. */
 export type Nudge = {
-  kind: 'move' | 'kind' | 'check'
+  kind: 'move' | 'kind' | 'check' | 'music'
   text: string
   /** Seconds to count down from once started; null counts up instead. */
   seconds: number | null
@@ -54,7 +54,7 @@ export type Reply = View & {
 }
 
 /** A setting `/bod config` shows a row for, as bod.py names it. */
-export type Setting = 'level' | 'move' | 'every' | 'kindness' | 'kind' | 'check' | 'claudes' | 'snooze'
+export type Setting = 'level' | 'move' | 'every' | 'kindness' | 'kind' | 'check' | 'music' | 'claudes' | 'snooze'
 
 /** The `/bod config` form while it's open: what's saved, what she's picked, what each may be. */
 export type Form = {
