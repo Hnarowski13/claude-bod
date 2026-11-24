@@ -27,7 +27,7 @@ def setUpModule():
 PICK = bod.pick  # the real one, before setUpModule swaps it
 NOW = datetime(2026, 10, 13, 10, 0).astimezone()
 NOT_OVER = lambda now: timedelta(hours=1)  # noqa: E731
-OVER = lambda now: timedelta(hours=5)  # noqa: E731
+OVER = lambda now: timedelta(hours=9)  # noqa: E731
 
 
 def minutes(n):
@@ -818,18 +818,18 @@ def focusing(state, started=NOW, minutes=60, goal="fix the sorting bug"):
 
 class HardCap(unittest.TestCase):
     def test_under_the_cap_prompts_go_through(self):
-        self.assertIsNone(bod.view(focusing(working()), NOW, worked=timedelta(hours=2, minutes=59))["locked"])
+        self.assertIsNone(bod.view(focusing(working()), NOW, worked=timedelta(hours=7, minutes=59))["locked"])
 
     def test_past_the_cap_prompts_are_refused_until_midnight(self):
-        locked = bod.view(working(), NOW, worked=timedelta(hours=3, minutes=1))["locked"]
-        self.assertIn("3h 01m", locked)
+        locked = bod.view(working(), NOW, worked=timedelta(hours=8, minutes=1))["locked"]
+        self.assertIn("8h 01m", locked)
         self.assertIn("midnight", locked)
 
     def test_hours_that_could_not_be_counted_never_lock(self):
         self.assertIsNone(bod.view(focusing(working()), NOW)["locked"])
 
     def test_the_cap_comes_before_the_focus_session(self):
-        locked = bod.view(focusing(working()), NOW, worked=timedelta(hours=3, minutes=1))["locked"]
+        locked = bod.view(focusing(working()), NOW, worked=timedelta(hours=8, minutes=1))["locked"]
         self.assertIn("midnight", locked)
 
 
