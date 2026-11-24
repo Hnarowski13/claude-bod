@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Focus, Nudge } from '../types'
-import { prBar } from './register'
+import { bandRoom, prBar } from './register'
 
 const BAND = {
   plugin: 'bod',
@@ -240,6 +240,23 @@ test('the status line counts down to the next nudge, and it shows the second it 
   await clock.advance(121_000)
 
   expect(await ui.find({ text: /squats/ })).toBeDefined()
+  expect(world.status).toBeUndefined()
+})
+
+test('the countdown leaves the status line the moment a nudge goes up, not a second later', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  world.next = { move: START + 182_000 }
+  await $.session.start(SESSION)
+  await clock.advance(1_000)
+
+  expect(world.status).toBe('🤸 move in 3:01')
+
+  // As bod.py answers /bod now: the nudge up, no countdown.
+  world.nudge = { kind: 'move', text: '10 squats', seconds: null, started: null }
+  world.next = null
+  await $.command.run(BOD('now'))
+
   expect(world.status).toBeUndefined()
 })
 
@@ -593,6 +610,19 @@ test('where the band is too short for the box, the nudge is one line', async ($,
 
   expect(await ui.find({ text: /Movement break: 8 push ups → 15 jumping jacks → 15 squats/ })).toBeDefined()
   expect(await ui.find({ key: 'go' })).toBeDefined()
+})
+
+test('the box never falls back to one line just because the band is still small, only on a short terminal', async ($, on) => {
+  expect(bandRoom(3, 40)).toBe(20)
+  expect(bandRoom(12, 10)).toBe(12)
+  expect(bandRoom(6, undefined)).toBe(6)
+
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'move', text: '8 push ups, then 15 jumping jacks, then 15 squats', seconds: null })
+  await $.session.start(SESSION)
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 3 }, viewport: { columns: 100, rows: 40 }, surface: 'terminal' })
+
+  expect(await ui.find({ text: '1. 8 push ups' })).toBeDefined()
 })
 
 test('no prompt is sent while an exercise is on show, and her words are left for Claude Code to put back', async ($, on) => {

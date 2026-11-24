@@ -440,6 +440,19 @@ async function show($: EngineInterface, next: View | null, at: number) {
 
   await update($, now, () => at)
   await update($, view, () => next)
+  // Straight away, not on the next once-a-second tick: a nudge going up
+  // drops the countdown, and the status line shouldn't lag the band.
+  refreshStatus($, next, at)
+}
+
+// Puts the status line's text up, when it changed.
+function refreshStatus($: EngineInterface, shown: View | null, at: number) {
+  const text = statusLine(phase, countdown(shown, at))
+
+  if (text !== status) {
+    status = text
+    $.ui.status(text)
+  }
 }
 
 // Runs once a second: moves the countdown in the status line and the timer on
@@ -455,12 +468,7 @@ async function second($: EngineInterface) {
     shown = await read($, view)
   }
 
-  const text = statusLine(phase, countdown(shown, at))
-
-  if (text !== status) {
-    status = text
-    $.ui.status(text)
-  }
+  refreshStatus($, shown, at)
 
   const nudge = shown?.nudge
 
@@ -541,6 +549,13 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
     </Box>
   )
 }
+
+// How many rows the takeover box may count on. `maxRows` alone can be small
+// for a moment while the band is still empty (the box then flashed up as one
+// line first), so the terminal's height decides: the band's slot is capped at
+// half of it. A box taller than the band right now scrolls rather than shrinks.
+export const bandRoom = (maxRows: number, terminalRows: number | undefined) =>
+  Math.max(maxRows, Math.floor((terminalRows ?? 0) / 2))
 
 // The one-line nudge: every kindness nudge, and the others where the card
 // has no room.
@@ -771,7 +786,7 @@ export const register: Register = on => {
     // A nudge that locks gets the box when the band has the rows for it.
     if (nudge !== null) {
       const press: Press = { go: () => void bod($, 'go'), swap: () => void bod($, 'swap'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
-      const room = e.props.maxRows - rows.length
+      const room = bandRoom(e.props.maxRows, e.viewport?.rows) - rows.length
 
       rows.push((locks(nudge) ? card(elements, nudge, at, press, room) : null) ?? line(elements, nudge, at, press))
     }
