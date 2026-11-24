@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Focus, Nudge } from '../types'
-import { bandRoom, cardTextRows, prBar, wrappedRows } from './register'
+import { bandRoom, cardTextRows, fitter, prBar, wrappedRows } from './register'
 
 const BAND = {
   plugin: 'bod',
@@ -646,6 +646,21 @@ test('the box is sized with the prompt box and wrapped lines counted, so it neve
   expect(wrappedRows('a'.repeat(11), 10)).toBe(2)
   // A heading that fits on one row, and a step too long for one.
   expect(cardTextRows('a'.repeat(20), ['short', 'b'.repeat(30)], 24 + 4)).toBe(1 + 1 + 2)
+})
+
+test('once the box overflows the band, it keeps under the real room the band has at that terminal size', async () => {
+  const fit = fitter()
+
+  // The first draw has only the terminal's height to go on: half of 40, less the prompt.
+  expect(fit.room(3, 40, 100)).toBe(17)
+  // A 17-row box went up, but other rows share the slot and the band only took 12.
+  fit.drew(17)
+  expect(fit.room(12, 40, 100)).toBe(12)
+  // The band empties out between nudges (maxRows small again); the real room is kept.
+  fit.drew(0)
+  expect(fit.room(3, 40, 100)).toBe(12)
+  // A different terminal size goes back to the guess.
+  expect(fit.room(3, 60, 100)).toBe(27)
 })
 
 test('where the band is a little short, the box drops its blank rows rather than scroll', async ($, on) => {
