@@ -1147,9 +1147,22 @@ def choose(args):
             sys.exit(1)
         settings[key] = value
         keys.append(key)
+    switch_on_by_minutes(settings, keys)
     save_settings(settings)
     drop_switched_off(settings)
     print(" ".join(confirm(key, settings, before) for key in dict.fromkeys(keys)))
+
+
+# Setting how often a nudge comes means she wants it: its minutes switch it on.
+SWITCHED_ON_BY = {"every": "move", "kind": "kindness"}
+
+
+def switch_on_by_minutes(settings, keys):
+    """Switches exercises or kindness on when she set their minutes, unless the
+    same call also switched that one off on purpose ("move off every 10")."""
+    for minutes_key, switch in SWITCHED_ON_BY.items():
+        if minutes_key in keys and switch not in keys:
+            settings[switch] = "on"
 
 
 def natural(args):
@@ -1193,9 +1206,11 @@ def confirm(key, settings, before):
         what = per_nudge(settings["level"])
         return f"Your level is now {settings['level']}: {what} per nudge."
     if key == "every":
-        return f"Your exercises are now every {settings['every']} minutes."
+        back = " They're back on." if before["move"] == "off" and is_on(settings, "move") else ""
+        return f"Your exercises are now every {settings['every']} minutes.{back}"
     if key == "kind":
-        return f"Something kind is now every {settings['kind']} minutes."
+        back = " Kindness nudges are back on." if before["kindness"] == "off" and is_on(settings, "kind") else ""
+        return f"Something kind is now every {settings['kind']} minutes.{back}"
     if key == "move":
         return f"Exercises are on, every {settings['every']} minutes." if is_on(settings, "move") else "Exercises are off."
     if key == "kindness":
