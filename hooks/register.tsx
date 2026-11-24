@@ -524,7 +524,8 @@ export const cardTextRows = (heading: string, lines: string[], columns: number) 
 // The takeover card: a box with what to do, one exercise per line, over the
 // timer and buttons; for a check-in, the question and the one thing to try.
 // It drops its blank rows when that's what makes it fit, and is null when it
-// doesn't fit in `rows` even then, so it never has to be scrolled.
+// doesn't fit in `rows` even then, so it never has to be scrolled. Comes with
+// how many rows it takes.
 function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number, columns: number) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
@@ -542,7 +543,7 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
 
   const gap = tightRows + CARD_GAP_ROWS <= rows ? 1 : 0
 
-  return (
+  const tree = (
     <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={gap}>
       <Box gap={1} flexWrap="wrap">
         <Text bold color="claude">
@@ -575,6 +576,8 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
       )}
     </Box>
   )
+
+  return { tree, rows: tightRows + gap * CARD_GAP_ROWS }
 }
 
 // How many rows the takeover box may count on. `maxRows` alone can be small
@@ -583,6 +586,37 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
 // half of it, the prompt box's rows included.
 export const bandRoom = (maxRows: number, terminalRows: number | undefined) =>
   Math.max(maxRows, Math.floor((terminalRows ?? 0) / 2) - PROMPT_ROWS)
+
+// Learns the band's real room. The guess from the terminal's height can't see
+// what else shares the band's slot (a status line several rows tall, say), so
+// when the box comes out taller than `maxRows` (the band scrolls), that
+// `maxRows` is the most the band can take at this terminal size, and the box
+// keeps under it from then on. `maxRows` isn't trusted on its own before
+// that: it's small for a moment while the band is still empty.
+export function fitter() {
+  let learned: { size: string; rows: number } | null = null
+  let drawnRows = 0
+
+  return {
+    room(maxRows: number, terminalRows: number | undefined, columns: number) {
+      const size = `${terminalRows}x${columns}`
+
+      if (drawnRows > maxRows) {
+        learned = { size, rows: maxRows }
+      }
+
+      const guess = bandRoom(maxRows, terminalRows)
+
+      return learned?.size === size ? Math.min(guess, learned.rows) : guess
+    },
+    // How tall the box drawn just now is, with the rows above it; 0 for no box.
+    drew(rows: number) {
+      drawnRows = rows
+    },
+  }
+}
+
+const bandFit = fitter()
 
 // The one-line nudge: every kindness nudge, and the others where the card
 // has no room.
@@ -792,6 +826,7 @@ export const register: Register = on => {
     const focus = shown?.focus?.line ?? null
 
     if (e.props.hasSurvey || shown === null || (shown.nudge === null && shown.stop === null && focus === null)) {
+      bandFit.drew(0)
       return next(e)
     }
 
@@ -813,9 +848,13 @@ export const register: Register = on => {
     // A nudge that locks gets the box when the band has the rows for it.
     if (nudge !== null) {
       const press: Press = { go: () => void bod($, 'go'), swap: () => void bod($, 'swap'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
-      const room = bandRoom(e.props.maxRows, e.viewport?.rows) - rows.length
+      const room = bandFit.room(e.props.maxRows, e.viewport?.rows, e.props.bodyColumns) - rows.length
+      const box = locks(nudge) ? card(elements, nudge, at, press, room, e.props.bodyColumns) : null
 
-      rows.push((locks(nudge) ? card(elements, nudge, at, press, room, e.props.bodyColumns) : null) ?? line(elements, nudge, at, press))
+      bandFit.drew(box === null ? 0 : rows.length + box.rows)
+      rows.push(box?.tree ?? line(elements, nudge, at, press))
+    } else {
+      bandFit.drew(0)
     }
 
     if (rows.length === 0) {
