@@ -67,6 +67,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // A nudge bod.py puts on show once the clock reaches `at`.
     due: null as { at: number; nudge: Nudge } | null,
   }
+  // $.store, kept in memory: where the band's learned room goes.
+  mock.store(on)
 
   on('session.start', () => ({ cwd: '/repo' }))
   // What the engine draws when the mod has nothing to show: an empty band.
@@ -661,6 +663,29 @@ test('once the box overflows the band, it keeps under the real room the band has
   expect(fit.room(3, 40, 100)).toBe(12)
   // A different terminal size goes back to the guess.
   expect(fit.room(3, 60, 100)).toBe(27)
+})
+
+test('what the band learned about its room is saved, and a new session starts out knowing it', async () => {
+  const fit = fitter()
+
+  expect(fit.unsaved()).toBe(null)
+  fit.room(3, 40, 100)
+  fit.drew(17)
+  fit.room(12, 40, 100)
+  const saved = fit.unsaved()
+
+  expect(saved).toEqual({ '40x100': 12 })
+  expect(fit.unsaved()).toBe(null)
+
+  // A restart or reload: the first box at this size already fits.
+  const next = fitter()
+
+  next.restore(JSON.parse(JSON.stringify(saved)))
+  expect(next.room(3, 40, 100)).toBe(12)
+  // Anything that isn't a saved room is ignored.
+  next.restore('nonsense')
+  next.restore({ '50x100': 'twelve' })
+  expect(next.room(3, 50, 100)).toBe(22)
 })
 
 test('where the band is a little short, the box drops its blank rows rather than scroll', async ($, on) => {

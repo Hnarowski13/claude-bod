@@ -481,6 +481,7 @@ async function second($: EngineInterface) {
   }
 
   refreshStatus($, shown, at)
+  await saveRooms($)
 
   const nudge = shown?.nudge
 
@@ -592,31 +593,67 @@ export const bandRoom = (maxRows: number, terminalRows: number | undefined) =>
 // when the box comes out taller than `maxRows` (the band scrolls), that
 // `maxRows` is the most the band can take at this terminal size, and the box
 // keeps under it from then on. `maxRows` isn't trusted on its own before
-// that: it's small for a moment while the band is still empty.
+// that: it's small for a moment while the band is still empty. What it learns
+// is kept in `$.store` (see `saveRooms`), so a restart or reload starts out knowing.
 export function fitter() {
-  let learned: { size: string; rows: number } | null = null
+  // The band's real room, by terminal size ("rows x columns").
+  let learned: Record<string, number> = {}
   let drawnRows = 0
+  let isUnsaved = false
 
   return {
     room(maxRows: number, terminalRows: number | undefined, columns: number) {
       const size = `${terminalRows}x${columns}`
 
-      if (drawnRows > maxRows) {
-        learned = { size, rows: maxRows }
+      if (drawnRows > maxRows && learned[size] !== maxRows) {
+        learned = { ...learned, [size]: maxRows }
+        isUnsaved = true
       }
 
       const guess = bandRoom(maxRows, terminalRows)
 
-      return learned?.size === size ? Math.min(guess, learned.rows) : guess
+      const known = learned[size]
+
+      return known === undefined ? guess : Math.min(guess, known)
     },
     // How tall the box drawn just now is, with the rows above it; 0 for no box.
     drew(rows: number) {
       drawnRows = rows
     },
+    // Takes back what an earlier session learned.
+    restore(saved: unknown) {
+      if (saved !== null && typeof saved === 'object') {
+        const sizes = Object.entries(saved).filter(([, rows]) => typeof rows === 'number')
+
+        learned = { ...Object.fromEntries(sizes), ...learned }
+      }
+    },
+    // What's been learned since it was last saved; null when nothing new.
+    unsaved() {
+      if (!isUnsaved) {
+        return null
+      }
+
+      isUnsaved = false
+
+      return learned
+    },
   }
 }
 
 const bandFit = fitter()
+// Where the band's learned room is kept across sessions.
+const ROOMS_KEY = 'bandRooms'
+
+// Saves what the band learned about its room. Not from the band's own hook:
+// a drawing doesn't write.
+async function saveRooms($: EngineInterface) {
+  const rooms = bandFit.unsaved()
+
+  if (rooms !== null) {
+    await $.store.set(ROOMS_KEY, rooms).catch(() => undefined)
+  }
+}
 
 // The one-line nudge: every kindness nudge, and the others where the card
 // has no room.
@@ -658,6 +695,8 @@ export const register: Register = on => {
 
     script = `${$.plugin.root}/scripts/bod.py`
     phase = null
+    // Nice to have: the box still sizes itself without it.
+    bandFit.restore(await $.store.get(ROOMS_KEY).catch(() => null))
 
     // bod.py doesn't run (no python3?): stay out of the way.
     if ((await bod($, 'tick')) === null) {
