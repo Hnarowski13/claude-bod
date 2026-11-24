@@ -880,6 +880,74 @@ class Focus(unittest.TestCase):
                 bod.STATE_PATH = old
 
 
+class FocusLog(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.mkdtemp()
+        patch = mock.patch.object(bod, "HISTORY_PATH", os.path.join(folder, "history.jsonl"))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_prompts_during_a_session_are_logged(self):
+        state = focusing(working())
+        bod.note_prompt(state, NOW + minutes(5), "fix the   sorting\nbug please")
+        bod.note_prompt(state, NOW + minutes(62), "write the PR")
+        self.assertEqual([e["text"] for e in state["focus"]["log"]], ["fix the sorting bug please", "write the PR"])
+
+    def test_no_log_outside_a_session_or_on_its_break(self):
+        state = working()
+        bod.note_prompt(state, NOW, "hello")
+        self.assertIsNone(state.get("focus"))
+        state = focusing(working(), started=NOW - minutes(66))
+        bod.note_prompt(state, NOW, "hello")
+        self.assertNotIn("log", state["focus"])
+
+    def test_a_long_prompt_is_cut_short(self):
+        state = focusing(working())
+        bod.note_prompt(state, NOW, "x" * 500)
+        text = state["focus"]["log"][0]["text"]
+        self.assertEqual(len(text), bod.LOG_PROMPT_CHARS)
+        self.assertTrue(text.endswith("…"))
+
+    def test_the_break_line_asks_what_we_worked_on_until_she_answers(self):
+        wrap_up = bod.view(focusing(working(), started=NOW - minutes(62)), NOW)
+        self.assertNotIn("/bod recall", wrap_up["focus"]["line"])
+        state = focusing(working(), started=NOW - minutes(66))
+        self.assertIn("what did we work on? /bod recall", bod.view(state, NOW)["focus"]["line"])
+        bod.recall(state, ["the", "memory", "thing"])
+        line = bod.view(state, NOW)["focus"]["line"]
+        self.assertIn("take your break", line)
+        self.assertNotIn("/bod recall", line)
+
+    def test_recall_keeps_her_words_then_shows_the_log(self):
+        state = focusing(working(), started=NOW - minutes(62))
+        bod.note_prompt(state, NOW - minutes(30), "pu bod 115")
+        said = bod.recall(state, ["the", "bod", "memory", "thing"])
+        self.assertEqual(state["focus"]["recall"], "the bod memory thing")
+        self.assertIn("- pu bod 115", said)
+        self.assertIn("You remembered: the bod memory thing", said)
+
+    def test_recall_with_no_words_asks_and_saves_nothing(self):
+        state = focusing(working())
+        self.assertIn("in your own words", bod.recall(state, []))
+        self.assertNotIn("recall", state["focus"])
+
+    def test_a_new_session_moves_the_last_one_into_the_history(self):
+        state = focusing(working(), started=NOW - minutes(80))
+        bod.note_prompt(state, NOW - minutes(70), "first thing")
+        finished = state["focus"]
+        bod.start_focus(state, NOW, ["30", "next", "thing"])
+        bod.keep_in_history(finished)
+        self.assertEqual([s["goal"] for s in bod.history()], ["fix the sorting bug"])
+        log = bod.todays_log(state, NOW)
+        self.assertIn("fix the sorting bug", log)
+        self.assertIn("- first thing", log)
+        self.assertIn("next thing", log)
+
+    def test_only_todays_sessions_in_the_log(self):
+        bod.keep_in_history({"started": (NOW - timedelta(days=1)).isoformat(), "minutes": 30, "goal": "yesterday"})
+        self.assertIn("No focus sessions today", bod.todays_log(working(), NOW))
+
+
 class Merged(unittest.TestCase):
     def pr(self, repo, closed):
         return {"repository": {"name": repo}, "closedAt": closed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}

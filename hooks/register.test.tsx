@@ -45,6 +45,8 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // claude-limit.py: what it prints, '' when this session is within the cap.
     limit: '',
     refilled: [] as string[],
+    // The prompts the mod sent bod.py for the focus session's log.
+    notes: [] as string[],
     // The lines the mod added to the chat.
     logs: [] as string[],
     // When the move nudge is due, as bod.py would send it.
@@ -152,6 +154,18 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       world.commands.push(e.argv.slice(2).join(' '))
 
       return ok(`Claude Bod is on ${e.argv.slice(3).join(' ')}.\n`)
+    }
+
+    if (command === 'note') {
+      world.notes.push(e.init?.stdin ?? '')
+
+      return ok('')
+    }
+
+    if (command === 'recall' || command === 'log') {
+      world.commands.push(e.argv.slice(2).join(' '))
+
+      return ok('Today\'s focus sessions:\n')
     }
 
     if (command === 'focus') {
@@ -898,4 +912,30 @@ test('the break counts down in the status line', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
 
   expect(await ui.find({ text: /take your break/ })).toBeDefined()
+})
+
+test('a prompt that goes through is sent to the focus log; a refused one is not', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  await $.prompt.submit(PROMPT)
+
+  expect(world.notes).toEqual(['fix the bug'])
+
+  world.locked = 'No focus session running.'
+  await $.prompt.submit({ ...PROMPT, text: 'refused one' })
+
+  expect(world.notes).toEqual(['fix the bug'])
+})
+
+test('/bod recall and /bod log go to bod.py', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  const world = fakeBod(on, clock, null)
+  await $.session.start(SESSION)
+
+  expect(await $.command.run(BOD('recall the memory thing'))).toMatchObject({ text: "Today's focus sessions:" })
+  await $.command.run(BOD('log'))
+
+  expect(world.commands).toEqual(expect.arrayContaining(['recall the memory thing', 'log']))
 })
