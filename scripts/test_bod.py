@@ -847,6 +847,24 @@ class Focus(unittest.TestCase):
         bod.start_focus(state, NOW, ["15", "next", "thing"])
         self.assertEqual(state["focus"]["goal"], "next thing")
 
+    def test_no_sound_while_working_or_with_no_session(self):
+        self.assertIsNone(bod.focus_sound(working(), NOW))
+        self.assertIsNone(bod.focus_sound(focusing(working(), started=NOW - minutes(30)), NOW))
+
+    def test_one_sound_when_wrap_up_starts_and_one_when_the_break_starts(self):
+        state = focusing(working(), started=NOW - minutes(60))
+        self.assertEqual(bod.focus_sound(state, NOW), "wrap-up")
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(1)))
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(5)), "break")
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(6)))
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(15)))
+
+    def test_a_new_session_rings_again(self):
+        state = focusing(working(), started=NOW - minutes(75))
+        bod.focus_sound(state, NOW - minutes(14))
+        bod.start_focus(state, NOW, ["5", "next", "thing"])
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(5)), "wrap-up")
+
     def test_a_break_away_keeps_the_session(self):
         state = focusing(working())
         self.assertEqual(bod.fresh_state(NOW, state)["focus"], state["focus"])

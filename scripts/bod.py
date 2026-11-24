@@ -406,6 +406,20 @@ def start_focus(state, now, args):
             f"It ends at {time_of_day(work_ends)}, then you get {WRAP_UP_MINUTES} minutes to wrap up.")
 
 
+def focus_sound(state, now):
+    """On a tick: the focus phase whose sound should play now ("wrap-up" or
+    "break"), once per phase across every session, or None. Each tick runs
+    under the state lock, so only the first session to see the change rings."""
+    phase, _ = focus_phase(state, now)
+    if phase not in ("wrap-up", "break"):
+        return None
+    rang = state["focus"].setdefault("rang", [])
+    if phase in rang:
+        return None
+    rang.append(phase)
+    return phase
+
+
 def focus(args):
     now = datetime.now().astimezone()
     with locked():
@@ -811,6 +825,9 @@ def mod(button):
         if button == "tick":
             state["mod_seen"] = now
             advance(state, now)
+            sound = focus_sound(state, now)
+            if sound:
+                said = {"sound": sound}
         elif button == "now":
             right_now(state, now)
         elif button == "kindnow":
