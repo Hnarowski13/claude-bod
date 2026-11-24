@@ -57,6 +57,12 @@ Entry points:
                   Starts a focus session (60 minutes when no length is
                   given). Prompts only go through while one runs; when its
                   time is up she gets a few minutes to wrap up, then a break.
+  bod.py note     Run by the mod on every prompt that goes through, the
+                  prompt on stdin: adds it to the focus session's log.
+  bod.py recall <what she remembers>
+                  `/bod recall`: at the end of a session she says what it
+                  worked on from memory (if she likes), then sees the log.
+  bod.py log      `/bod log`: today's focus sessions, goals and prompts.
   bod.py settings What Claude Bod is set to, in a sentence.
   bod.py choices  Her settings and what each may be, as JSON, for the
                   mod's /bod config form.
@@ -114,10 +120,17 @@ FOCUS_CHOICES = (5, 10, 15, 30, 45, 60, 75, 90)
 FOCUS_DEFAULT_MINUTES = 60
 WRAP_UP_MINUTES = 5
 FOCUS_BREAK_MINUTES = 10
+# Each focus session keeps a log of the prompts she sends during it. A long
+# prompt (a paste) is cut to its first LOG_PROMPT_CHARS characters, and a
+# session keeps at most LOG_MAX_PROMPTS of them.
+LOG_PROMPT_CHARS = 200
+LOG_MAX_PROMPTS = 100
 
 STATE_PATH = os.environ.get("BOD_STATE") or os.path.expanduser("~/.claude/bod-state.json")
 # Her choices, kept apart from the state so a reset never loses them.
 SETTINGS_PATH = os.environ.get("BOD_SETTINGS") or os.path.expanduser("~/.claude/bod-settings.json")
+# Every finished focus session, one JSON line each: goal, prompts, what she recalled.
+HISTORY_PATH = os.environ.get("BOD_HISTORY") or os.path.expanduser("~/.claude/bod-focus-history.jsonl")
 
 # level: (exercises per nudge, how much the reps and seconds grow)
 LEVELS = {"gentle": (1, 1), "easy": (1, 1), "medium": (2, 1), "hard": (3, 1.5)}
@@ -333,6 +346,7 @@ FOCUS_HOW = (
     "/bod focus <minutes> <what you want to get done>, e.g. /bod focus 60 fix the sorting bug "
     f"(minutes: {', '.join(map(str, FOCUS_CHOICES))})"
 )
+RECALL_HOW = "/bod recall <in your own words>"
 
 
 def time_of_day(when):
@@ -360,13 +374,16 @@ def focus_phase(state, now):
     return "none", None
 
 
-def focus_line(phase, ends, goal):
+def focus_line(phase, ends, goal, recalled=False):
     """The band's line for the focus session: time to wrap up, or why prompts
-    are refused. None while the session is running."""
+    are refused. On the break, until she's answered, it also asks what the
+    session worked on (answering is up to her). None while the session is running."""
     if phase == "wrap-up":
         return (f"⏰ Time's up. You have {WRAP_UP_MINUTES} minutes to wrap up: leave notes for next time. "
                 f"You set out to: {goal}")
     lock = focus_lock_text(phase, ends)
+    if lock and phase == "break" and not recalled:
+        return f"🎯 {lock} If you like, before looking: what did we work on? {RECALL_HOW}"
     return f"🎯 {lock}" if lock else None
 
 
@@ -424,9 +441,101 @@ def focus(args):
     now = datetime.now().astimezone()
     with locked():
         state = load_state() or fresh_state(now)
+        finished = state.get("focus")
         said = start_focus(state, now, args)
+        # The session before this one goes into the history once a new one starts.
+        if finished and state.get("focus") is not finished:
+            keep_in_history(finished)
         save_state(state)
     print(said)
+
+
+def keep_in_history(session):
+    """Adds a finished focus session (its goal, its prompts, what she recalled) to the history file."""
+    kept = {key: session.get(key) for key in ("started", "minutes", "goal", "log", "recall")}
+    with open(HISTORY_PATH, "a") as fh:
+        fh.write(json.dumps(kept) + "\n")
+
+
+def history():
+    """Every focus session in the history file, oldest first. A line that can't be read is skipped."""
+    try:
+        with open(HISTORY_PATH) as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    sessions = []
+    for line in lines:
+        with contextlib.suppress(ValueError):
+            sessions.append(json.loads(line))
+    return sessions
+
+
+def note_prompt(state, now, text):
+    """Adds a prompt she sent to the running focus session's log. Only while
+    it's running or wrapping up; a long prompt is cut short."""
+    phase, _ = focus_phase(state, now)
+    if phase not in ("working", "wrap-up"):
+        return
+    text = " ".join(text.split())
+    if not text:
+        return
+    if len(text) > LOG_PROMPT_CHARS:
+        text = text[:LOG_PROMPT_CHARS - 1] + "…"
+    log = state["focus"].setdefault("log", [])
+    if len(log) < LOG_MAX_PROMPTS:
+        log.append({"at": now.isoformat(), "text": text})
+
+
+def session_summary(session):
+    """One focus session, for her to read: when, the goal, then every prompt she sent."""
+    started = datetime.fromisoformat(session["started"])
+    lines = [f"🎯 {time_of_day(started)}, {session['minutes']} min: {session['goal']}"]
+    log = session.get("log") or []
+    lines += [f"  - {entry['text']}" for entry in log] or ["  (no prompts logged)"]
+    if session.get("recall"):
+        lines.append(f"  You remembered: {session['recall']}")
+    return "\n".join(lines)
+
+
+def recall(state, args):
+    """`/bod recall <what she remembers>`: keeps her own words on the current
+    or last session, then shows what it actually worked on to compare."""
+    session = state.get("focus")
+    if not session:
+        return f"No focus session to look back on yet. Start one: {FOCUS_HOW}."
+    words = " ".join(args).strip()
+    if not words:
+        return (f"What did we work on this session? Say it in your own words before looking: {RECALL_HOW}. "
+                "Or /bod log to just see it.")
+    session["recall"] = words
+    return f"Nice, you remembered. Here's what the session actually worked on:\n{session_summary(session)}"
+
+
+def todays_log(state, now):
+    """`/bod log`: today's focus sessions, oldest first, the current one included."""
+    sessions = [*history(), *([state["focus"]] if state.get("focus") else [])]
+    todays = [s for s in sessions if datetime.fromisoformat(s["started"]).date() == now.date()]
+    if not todays:
+        return f"No focus sessions today yet. Start one: {FOCUS_HOW}."
+    return "Today's focus sessions:\n" + "\n".join(session_summary(s) for s in todays)
+
+
+def focus_record(mode, args):
+    """`bod.py note` (the prompt comes on stdin), `bod.py recall <words>` and `bod.py log`."""
+    now = datetime.now().astimezone()
+    with locked():
+        state = load_state() or fresh_state(now)
+        if mode == "note":
+            note_prompt(state, now, sys.stdin.read())
+            said = None
+        elif mode == "recall":
+            said = recall(state, args)
+        else:
+            said = todays_log(state, now)
+        save_state(state)
+    if said:
+        print(said)
 
 
 def load_settings():
@@ -764,7 +873,7 @@ def view(state, now, settings=None, worked=None, merged=None):
         "skips": skips_today(state, now),
         "merged": {"count": merged, "cap": DAILY_PR_CAP} if merged is not None else None,
         "focus": {"phase": phase, "ends": ms(phase_ends) if phase_ends else None, "goal": goal,
-                  "line": focus_line(phase, phase_ends, goal)},
+                  "line": focus_line(phase, phase_ends, goal, bool(phase != "none" and state["focus"].get("recall")))},
         "locked": cap_lock or focus_lock_text(phase, phase_ends),
     }
 
@@ -900,6 +1009,7 @@ def info(settings):
         f"- Daily cap: {DAILY_CAP_HOURS} hours, then prompts are refused until midnight",
         (f"- Focus sessions: prompts only go through during one, then {WRAP_UP_MINUTES} minutes to wrap up "
          f"and a {FOCUS_BREAK_MINUTES} minute break · {FOCUS_HOW}"),
+        "- Focus log: every prompt in a session is kept · /bod log for today's · /bod recall <in your own words> to test your memory first",
         f"- Take a break after {STRETCH_LIMIT_MINUTES} minutes without one (/work-check)",
     ])
 
@@ -1044,6 +1154,8 @@ if __name__ == "__main__":
         choose(sys.argv[1:])
     elif mode == "focus":
         focus(sys.argv[2:])
+    elif mode in ("note", "recall", "log"):
+        focus_record(mode, sys.argv[2:])
     elif mode == "settings":
         print(describe(load_settings()))
     elif mode == "choices":

@@ -20,6 +20,9 @@
 // Prompts only go through during a focus session, started on purpose with
 // `/bod focus <minutes> <what she wants to get done>`. When its time is up
 // she gets 5 minutes to wrap up, then a 10 minute break before the next.
+// Every prompt sent during a session goes in its log; at wrap-up she's asked
+// (if she likes) to say what it worked on from memory with `/bod recall`,
+// then sees the log. `/bod log` shows today's sessions.
 //
 // It also caps how many Claudes are open at once (scripts/claude-limit.py):
 // a session past the cap has its prompts refused until an older one closes.
@@ -409,6 +412,16 @@ async function overLimit($: EngineInterface): Promise<string | null> {
   }
 }
 
+// Adds a prompt that's going through to the focus session's log (bod.py keeps
+// it only while a session runs). A failure just leaves it out of the log.
+async function notePrompt($: EngineInterface, text: string) {
+  if (script === null) {
+    return
+  }
+
+  await $.process.run(['python3', script, 'note'], { stdin: text, timeoutMs: 5000 }).catch(() => undefined)
+}
+
 // Draws `next`. Only a real change redraws anything, not every poll.
 async function show($: EngineInterface, next: View | null, at: number) {
   const shown = await read($, view)
@@ -571,8 +584,8 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'bod',
-      description: 'Start a focus session (focus <minutes> <goal>), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
-      argumentHint: '[focus 5|10|15|30|45|60|75|90 <goal>] [config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
+      description: 'Start a focus session (focus <minutes> <goal>), look back on it (recall <what you remember>, log), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness or the check-in off (config: all of them in one form)',
+      argumentHint: '[focus 5|10|15|30|45|60|75|90 <goal>] [recall <what we worked on>] [log] [config] [info] [now] [move now] [kind now] [level gentle|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
@@ -601,6 +614,12 @@ export const register: Register = on => {
 
     if (setting === 'config') {
       return { text: await openConfig($) }
+    }
+
+    // `/bod recall <what she remembers>` and `/bod log`: the focus session's
+    // log, after saying what it worked on from memory or straight away.
+    if (setting === 'recall' || setting === 'log') {
+      return { text: await settings($, args) }
     }
 
     // `/bod focus 60 fix the sorting bug`: bod.py starts the session (or says
@@ -666,6 +685,8 @@ export const register: Register = on => {
     }
 
     if (!locks(reply.nudge)) {
+      await notePrompt($, e.text)
+
       return next(e)
     }
 
