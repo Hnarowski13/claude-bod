@@ -123,6 +123,8 @@ MERGED_REFRESH_SECONDS = 300
 FOCUS_CHOICES = (5, 10, 15, 30, 45, 60, 75, 90)
 FOCUS_DEFAULT_MINUTES = 60
 WRAP_UP_MINUTES = 5
+# A sound this long before wrap-up ends, so the break doesn't catch her mid-sentence.
+LAST_MINUTE_SECONDS = 60
 FOCUS_BREAK_MINUTES = 10
 # Each focus session keeps a log of the prompts she sends during it. A long
 # prompt (a paste) is cut to its first LOG_PROMPT_CHARS characters, and a
@@ -431,17 +433,24 @@ def start_focus(state, now, args):
 
 
 def focus_sound(state, now):
-    """On a tick: the focus phase whose sound should play now ("wrap-up" or
-    "break"), once per phase across every session, or None. Each tick runs
-    under the state lock, so only the first session to see the change rings."""
-    phase, _ = focus_phase(state, now)
+    """On a tick: the sound that should play now, once each across every
+    session, or None: "wrap-up" when wrap-up starts, "last-minute" with
+    LAST_MINUTE_SECONDS of it left, and "break" when the break starts. Each
+    tick runs under the state lock, so only the first session to see the
+    change rings."""
+    phase, ends = focus_phase(state, now)
     if phase not in ("wrap-up", "break"):
         return None
+    moment = phase
+    if phase == "wrap-up" and ends - now <= timedelta(seconds=LAST_MINUTE_SECONDS):
+        moment = "last-minute"
     rang = state["focus"].setdefault("rang", [])
-    if phase in rang:
+    if moment in rang:
         return None
-    rang.append(phase)
-    return phase
+    # A later moment covers the earlier ones it skipped past (a laptop asleep), so they never ring late.
+    order = ("wrap-up", "last-minute", "break")
+    rang.extend(m for m in order[:order.index(moment) + 1] if m not in rang)
+    return moment
 
 
 def focus(args):

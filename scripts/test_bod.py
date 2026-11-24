@@ -916,9 +916,20 @@ class Focus(unittest.TestCase):
         state = focusing(working(), started=NOW - minutes(60))
         self.assertEqual(bod.focus_sound(state, NOW), "wrap-up")
         self.assertIsNone(bod.focus_sound(state, NOW + minutes(1)))
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(3)))
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(4)), "last-minute")
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(4) + timedelta(seconds=30)))
         self.assertEqual(bod.focus_sound(state, NOW + minutes(5)), "break")
         self.assertIsNone(bod.focus_sound(state, NOW + minutes(6)))
         self.assertIsNone(bod.focus_sound(state, NOW + minutes(15)))
+
+    def test_a_sound_skipped_past_never_rings_late(self):
+        state = focusing(working(), started=NOW - minutes(60))
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(4)), "last-minute")
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(5)), "break")
+        state = focusing(working(), started=NOW - minutes(60))
+        self.assertEqual(bod.focus_sound(state, NOW + minutes(6)), "break")
+        self.assertIsNone(bod.focus_sound(state, NOW + minutes(7)))
 
     def test_a_new_session_rings_again(self):
         state = focusing(working(), started=NOW - minutes(75))
