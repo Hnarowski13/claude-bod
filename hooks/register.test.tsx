@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Focus, Nudge } from '../types'
-import { bandRoom, prBar } from './register'
+import { bandRoom, cardTextRows, prBar, wrappedRows } from './register'
 
 const BAND = {
   plugin: 'bod',
@@ -377,7 +377,8 @@ test('an exercise: go starts a timer that counts up, done ends it', async ($, on
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, { kind: 'move', text: '10 squats', seconds: null })
   await $.session.start(SESSION)
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  // Too short for even the tight box (5 rows), so this is the one-line nudge.
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 4 }, surface: 'terminal' })
 
   expect(await ui.find({ text: /Movement break: 10 squats/ })).toBeDefined()
   expect(await ui.find({ key: 'done' })).toBeUndefined()
@@ -625,7 +626,7 @@ test('where the band is too short for the box, the nudge is one line', async ($,
 })
 
 test('the box never falls back to one line just because the band is still small, only on a short terminal', async ($, on) => {
-  expect(bandRoom(3, 40)).toBe(20)
+  expect(bandRoom(3, 40)).toBe(17)
   expect(bandRoom(12, 10)).toBe(12)
   expect(bandRoom(6, undefined)).toBe(6)
 
@@ -635,6 +636,28 @@ test('the box never falls back to one line just because the band is still small,
   const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 3 }, viewport: { columns: 100, rows: 40 }, surface: 'terminal' })
 
   expect(await ui.find({ text: '1. 8 push ups' })).toBeDefined()
+})
+
+test('the box is sized with the prompt box and wrapped lines counted, so it never has to be scrolled', async ($, on) => {
+  // Half of a 24-row terminal is 12, and the prompt box takes 3 of those.
+  expect(bandRoom(3, 24)).toBe(9)
+  expect(wrappedRows('', 10)).toBe(1)
+  expect(wrappedRows('a'.repeat(10), 10)).toBe(1)
+  expect(wrappedRows('a'.repeat(11), 10)).toBe(2)
+  // A heading that fits on one row, and a step too long for one.
+  expect(cardTextRows('a'.repeat(20), ['short', 'b'.repeat(30)], 24 + 4)).toBe(1 + 1 + 2)
+})
+
+test('where the band is a little short, the box drops its blank rows rather than scroll', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  fakeBod(on, clock, { kind: 'move', text: '8 push ups, then 15 jumping jacks, then 15 squats', seconds: null })
+  await $.session.start(SESSION)
+  // Frame 2 + heading 1 + three steps + buttons 1 = 7 rows, with no room for the 2 blank ones.
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, maxRows: 8 }, surface: 'terminal' })
+
+  expect(await ui.find({ text: '1. 8 push ups' })).toBeDefined()
+  expect(await ui.find({ text: '3. 15 squats' })).toBeDefined()
+  expect(await ui.find({ key: 'go' })).toBeDefined()
 })
 
 test('no prompt is sent while an exercise is on show, and her words are left for Claude Code to put back', async ($, on) => {

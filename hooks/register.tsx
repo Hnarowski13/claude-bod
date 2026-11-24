@@ -50,8 +50,14 @@ const ICONS = { move: '🤸', kind: '💛', check: '🧭', music: '🎵', off: '
 const TITLES = { move: 'Movement break', check: 'Workflow check-in' }
 // What the check-in asks, over the one thing to try (bod.py's CHECK_IN_QUESTION).
 const CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
-// The box's frame, its heading, the blank rows and the button row around the lines.
-const CARD_CHROME_ROWS = 6
+// The box's frame (top and bottom border) and its button row.
+const CARD_FRAME_ROWS = 3
+// The blank rows between the heading, the lines and the buttons, when there's room.
+const CARD_GAP_ROWS = 2
+// Columns the box's border and padding take from each line (the steps are indented 2 more).
+const CARD_SIDE_COLUMNS = 4
+// The prompt box under the band: its top border, one line, its bottom border.
+const PROMPT_ROWS = 3
 
 const view = atom({ plugin: 'bod', key: 'view' } as const, null)
 const now = atom({ plugin: 'bod', key: 'now' } as const, 0)
@@ -507,32 +513,47 @@ async function finish($: EngineInterface) {
   }
 }
 
+// How many rows a Text takes once it wraps at `width` columns.
+export const wrappedRows = (text: string, width: number) => Math.max(1, Math.ceil(text.length / Math.max(1, width)))
+
+// How tall the card's heading and lines are at `columns` wide, frame and gaps aside.
+export const cardTextRows = (heading: string, lines: string[], columns: number) =>
+  wrappedRows(heading, columns - CARD_SIDE_COLUMNS) +
+  lines.reduce((total, text) => total + wrappedRows(text, columns - CARD_SIDE_COLUMNS - 2), 0)
+
 // The takeover card: a box with what to do, one exercise per line, over the
 // timer and buttons; for a check-in, the question and the one thing to try.
-// Null when it doesn't fit in `rows`.
-function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number) {
+// It drops its blank rows when that's what makes it fit, and is null when it
+// doesn't fit in `rows` even then, so it never has to be scrolled.
+function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: Press, rows: number, columns: number) {
   const isRunning = nudge.started !== null
   const timer = reading(nudge, at)
   const isCheck = nudge.kind === 'check'
   const todo = isCheck ? [CHECK_IN_QUESTION, `Try this: ${nudge.text}`] : steps(nudge)
   const note = skippedNote(nudge)
+  const title = isCheck ? TITLES.check : TITLES.move
+  const heading = `${ICONS[nudge.kind]}  ${title} · no prompts until this is done${note !== null ? ` · ${note}` : ''}`
+  const lines = todo.map((step, index) => (todo.length > 1 && !isCheck ? `${index + 1}. ${step}` : step))
+  const tightRows = CARD_FRAME_ROWS + cardTextRows(heading, lines, columns)
 
-  if (todo.length + CARD_CHROME_ROWS > rows) {
+  if (tightRows > rows) {
     return null
   }
 
+  const gap = tightRows + CARD_GAP_ROWS <= rows ? 1 : 0
+
   return (
-    <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={1}>
+    <Box key="nudge" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} gap={gap}>
       <Box gap={1} flexWrap="wrap">
         <Text bold color="claude">
-          {ICONS[nudge.kind]} {isCheck ? TITLES.check : TITLES.move}
+          {ICONS[nudge.kind]} {title}
         </Text>
         <Text dimColor>· no prompts until this is done</Text>
         {note !== null ? <Text color="warning">· {note}</Text> : null}
       </Box>
       <Box flexDirection="column" paddingX={2}>
-        {todo.map((step, index) => (
-          <Text bold>{todo.length > 1 && !isCheck ? `${index + 1}. ${step}` : step}</Text>
+        {lines.map(text => (
+          <Text bold>{text}</Text>
         ))}
       </Box>
       {isCheck ? (
@@ -559,9 +580,9 @@ function card({ Box, Button, Text }: Drawing, nudge: Nudge, at: number, press: P
 // How many rows the takeover box may count on. `maxRows` alone can be small
 // for a moment while the band is still empty (the box then flashed up as one
 // line first), so the terminal's height decides: the band's slot is capped at
-// half of it. A box taller than the band right now scrolls rather than shrinks.
+// half of it, the prompt box's rows included.
 export const bandRoom = (maxRows: number, terminalRows: number | undefined) =>
-  Math.max(maxRows, Math.floor((terminalRows ?? 0) / 2))
+  Math.max(maxRows, Math.floor((terminalRows ?? 0) / 2) - PROMPT_ROWS)
 
 // The one-line nudge: every kindness nudge, and the others where the card
 // has no room.
@@ -794,7 +815,7 @@ export const register: Register = on => {
       const press: Press = { go: () => void bod($, 'go'), swap: () => void bod($, 'swap'), done: () => void finish($), snooze: () => void bod($, 'snooze') }
       const room = bandRoom(e.props.maxRows, e.viewport?.rows) - rows.length
 
-      rows.push((locks(nudge) ? card(elements, nudge, at, press, room) : null) ?? line(elements, nudge, at, press))
+      rows.push((locks(nudge) ? card(elements, nudge, at, press, room, e.props.bodyColumns) : null) ?? line(elements, nudge, at, press))
     }
 
     if (rows.length === 0) {
