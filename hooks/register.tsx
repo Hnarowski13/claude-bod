@@ -35,6 +35,11 @@ import type { Focus, Form, Nudge, Reply, Setting, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
+// What plays when a focus session's time is up (wrap up) and when its break starts.
+const FOCUS_SOUNDS = {
+  'wrap-up': '/System/Library/Sounds/Sosumi.aiff',
+  break: '/System/Library/Sounds/Blow.aiff',
+} as const
 const ICONS = { move: '🤸', kind: '💛', check: '🧭' }
 const TITLES = { move: 'Movement break', check: 'Workflow check-in' }
 // What the check-in asks, over the one thing to try (bod.py's CHECK_IN_QUESTION).
@@ -286,6 +291,12 @@ async function bod($: EngineInterface, command: Command): Promise<Reply | null> 
     const { nudge, stop, next = null, paused = false, worked = null, skips = 0, merged = null, focus = null, ...rest } = JSON.parse(stdout) as Reply
 
     await show($, { nudge, stop, next, paused, worked, skips, merged, focus }, rest.now)
+
+    // A focus session just hit wrap-up or its break, and bod.py picked this session to ring.
+    if (rest.sound) {
+      // Not awaited: a prompt shouldn't wait for the sound to finish.
+      void $.process.run(['afplay', FOCUS_SOUNDS[rest.sound]]).catch(() => undefined)
+    }
 
     return { nudge, stop, next, paused, worked, skips, merged, focus, ...rest }
   } catch {
