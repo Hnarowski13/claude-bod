@@ -103,7 +103,7 @@ MUSIC_MINUTES = 60
 MUSIC_TEXT = "put on something you love"
 BREAK_MINUTES = 20
 # Hours of Claude time a day. Past them, prompts are refused until midnight.
-DAILY_CAP_HOURS = 3
+DAILY_CAP_HOURS = 8
 STRETCH_LIMIT_MINUTES = 90
 # After a done, how long the band stays empty before the next nudge may show.
 QUIET_SECONDS = 60
