@@ -38,9 +38,11 @@ import type { Focus, Form, Nudge, Reply, Setting, View } from '../types'
 
 const POLL_MS = 5000
 const SOUND = '/System/Library/Sounds/Glass.aiff'
-// What plays when a focus session's time is up (wrap up) and when its break starts.
+// What plays when a focus session's time is up (wrap up), with one minute of
+// wrap-up left, and when its break starts.
 const FOCUS_SOUNDS = {
   'wrap-up': '/System/Library/Sounds/Sosumi.aiff',
+  'last-minute': '/System/Library/Sounds/Ping.aiff',
   break: '/System/Library/Sounds/Blow.aiff',
 } as const
 const ICONS = { move: '🤸', kind: '💛', check: '🧭', music: '🎵' }

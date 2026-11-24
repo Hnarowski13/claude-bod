@@ -34,7 +34,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
     // Every sound file afplay was asked to play, in order.
     played: [] as string[],
     // What the next tick says to play for the focus session, as bod.py would; cleared once said.
-    focusSound: null as 'wrap-up' | 'break' | null,
+    focusSound: null as 'wrap-up' | 'last-minute' | 'break' | null,
     hasBeeped: false,
     // Wide enough for the engine to place a panel the mod opens on its own.
     isWide: false,
@@ -188,7 +188,7 @@ const fakeBod = (on: On, clock: { now: () => number }, first: Omit<Nudge, 'start
       world.due = null
     }
 
-    const said: { took?: number; beep?: boolean; sound?: 'wrap-up' | 'break' } = {}
+    const said: { took?: number; beep?: boolean; sound?: 'wrap-up' | 'last-minute' | 'break' } = {}
     const { nudge } = world
 
     if (command === 'swap' && nudge && nudge.kind === 'move' && nudge.started === null) {
@@ -396,17 +396,23 @@ test('a timed hold counts down and rings once at zero', async ($, on) => {
   expect(world.commands.filter(command => command === 'beep')).toHaveLength(1)
 })
 
-test('a focus session rings once at wrap-up and once when the break starts, each its own sound', async ($, on) => {
+test('a focus session rings at wrap-up, with one minute of it left, and when the break starts, each its own sound', async ($, on) => {
   const clock = mock.clock(on, { now: START })
   const world = fakeBod(on, clock, null)
   await $.session.start(SESSION)
 
   world.focusSound = 'wrap-up'
   await clock.advance(10_000)
+  world.focusSound = 'last-minute'
+  await clock.advance(10_000)
   world.focusSound = 'break'
   await clock.advance(10_000)
 
-  expect(world.played).toEqual(['/System/Library/Sounds/Sosumi.aiff', '/System/Library/Sounds/Blow.aiff'])
+  expect(world.played).toEqual([
+    '/System/Library/Sounds/Sosumi.aiff',
+    '/System/Library/Sounds/Ping.aiff',
+    '/System/Library/Sounds/Blow.aiff',
+  ])
 })
 
 test('a kindness nudge has done and no timer', async ($, on) => {

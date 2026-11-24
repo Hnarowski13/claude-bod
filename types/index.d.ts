@@ -49,8 +49,8 @@ export type Reply = View & {
   took?: number
   /** After beep: this session is the one that plays the sound. */
   beep?: boolean
-  /** After tick: a focus session just reached wrap-up or its break, and this session plays that sound. */
-  sound?: 'wrap-up' | 'break'
+  /** After tick: a focus session just reached wrap-up, its last minute or its break, and this session plays that sound. */
+  sound?: 'wrap-up' | 'last-minute' | 'break'
 }
 
 /** A setting `/bod config` shows a row for, as bod.py names it. */
