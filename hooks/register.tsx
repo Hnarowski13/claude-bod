@@ -7,7 +7,8 @@
 // band above the prompt, full width, and no prompt is sent until it's done (or
 // put off with "not now"). So does the workflow check-in every 45 minutes,
 // with one thing to try against Claude-FOG. Kindness nudges, the hourly music
-// break and the "stop for the day" line show in the same band as a single line.
+// break, the reminder that exercises or kindness are still switched off, and
+// the "stop for the day" line show in the same band as a single line.
 //
 // The status line under the prompt keeps a running total of today's hours
 // and of today's merged PRs against the daily cap (as a progress bar),
@@ -45,7 +46,7 @@ const FOCUS_SOUNDS = {
   'last-minute': '/System/Library/Sounds/Ping.aiff',
   break: '/System/Library/Sounds/Blow.aiff',
 } as const
-const ICONS = { move: '🤸', kind: '💛', check: '🧭', music: '🎵' }
+const ICONS = { move: '🤸', kind: '💛', check: '🧭', music: '🎵', off: '🔕' }
 const TITLES = { move: 'Movement break', check: 'Workflow check-in' }
 // What the check-in asks, over the one thing to try (bod.py's CHECK_IN_QUESTION).
 const CHECK_IN_QUESTION = "How's the workflow going? Feeling the Claude-FOG?"
@@ -86,6 +87,10 @@ export const headline = (nudge: Nudge) => {
     return `Music break: ${nudge.text}.`
   }
 
+  if (nudge.kind === 'off') {
+    return `${nudge.text}.`
+  }
+
   return nudge.kind === 'kind' ? `Be nice to yourself: ${nudge.text}` : nudge.text
 }
 
@@ -100,10 +105,11 @@ export const skippedNote = (nudge: Nudge) => {
   return `you skipped ${skipped === 1 ? 'once' : skipped === 2 ? 'twice' : `${skipped} times`} already`
 }
 
-// The nudges that take the session over until they're done; kindness and
-// music only show a line.
+// The nudges that take the session over until they're done; kindness, music
+// and the switched-off reminder only show a line.
+const LINE_ONLY: Nudge['kind'][] = ['kind', 'music', 'off']
 export const locks = (nudge: Nudge | null | undefined): nudge is Nudge =>
-  nudge !== null && nudge !== undefined && nudge.kind !== 'kind' && nudge.kind !== 'music'
+  nudge !== null && nudge !== undefined && !LINE_ONLY.includes(nudge.kind)
 
 // Where a running timer stands: up for reps, down for a timed hold like the plank.
 export const reading = (nudge: Nudge, at: number) => {
