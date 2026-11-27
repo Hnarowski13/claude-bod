@@ -972,15 +972,15 @@ class Focus(unittest.TestCase):
         self.assertIn("What do you want to get done", said)
         self.assertIsNone(state.get("focus"))
 
-    def test_short_sessions_of_five_and_ten_minutes(self):
-        for length in (5, 10):
+    def test_short_sessions_of_five_ten_twenty_and_twenty_five_minutes(self):
+        for length in (5, 10, 20, 25):
             state = working()
             bod.start_focus(state, NOW, [str(length), "quick", "thing"])
             self.assertEqual(state["focus"]["minutes"], length)
 
     def test_only_the_listed_lengths(self):
         state = working()
-        self.assertIn("Pick one of", bod.start_focus(state, NOW, ["20", "stuff"]))
+        self.assertIn("Pick one of", bod.start_focus(state, NOW, ["40", "stuff"]))
         self.assertIsNone(state.get("focus"))
 
     def test_no_new_session_while_one_runs_wraps_up_or_breaks(self):
