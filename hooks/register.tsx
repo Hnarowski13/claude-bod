@@ -708,7 +708,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'bod',
       description: 'Start a focus session (focus <minutes> <goal>), look back on it (recall <what you remember>, log), exercise or be kind right now, or set the level, how often to exercise or be kind, how many Claudes may be open and how long a snooze lasts, or switch exercises, kindness, the check-in or the music break off (config: all of them in one form)',
-      argumentHint: '[focus 5|10|15|30|45|60|75|90 <goal>] [recall <what we worked on>] [log] [config] [info] [now] [move now] [kind now] [level gentle|chair|taichi|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check|music on|off]',
+      argumentHint: '[focus 5|10|15|20|25|30|45|60|75|90 <goal>] [recall <what we worked on>] [log] [config] [info] [now] [move now] [kind now] [level gentle|chair|taichi|easy|medium|hard] [move every 5|10|15] [kind every 5|10|15|30|45] [claudes 1-10] [snooze 2|5|10|15] [move|kind|check|music on|off]',
     })
 
     $.clock.every(POLL_MS, () => void bod($, 'tick'))
